@@ -24,16 +24,20 @@
 # Set run name, paths to raster, and training polygons -------------------------------
   
   # Set name for model run
-  run_name <- "2022_08_4band_FCATtoCachi - balanced - 2022_04_03"
+  # run_name <- "2022_08_4band_FCATtoCachi - balanced - 2022_04_03"
+  
+  run_name <- "2019_09_4band_FCATtoCachi - balanced - 2022_04_04"
   
   # Create directory in output folder
   dir.create(paste0("./output/", run_name))
   
   # Path to raster merged using 01_merge_raster.R
-  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
+  # path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
+  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
   
   # Path to training polygons
-  path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
+  # path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
+  path_to_training_polys <- "class_shapefiles/2019_09 classes.shp"
   
   
 # Load in merged raster ---------------------------------------------------
@@ -50,6 +54,7 @@
     #                       "red", "rededge", "nir")
     # names(ras) <- eight_band_names
 
+  
   
 # Read in training polygons ------------------------------------------
   
@@ -194,7 +199,7 @@
   
   
   # Randomly subsample search space
-  n_combos <- 50 # How many parameter combos to test?
+  n_combos <- 5 # How many parameter combos to test?
   
   search_space <- search_space %>%
     sample_n(n_combos)

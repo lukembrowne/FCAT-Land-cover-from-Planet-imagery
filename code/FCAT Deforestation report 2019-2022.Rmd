@@ -1,0 +1,79 @@
+---
+title: "FCAT Deforestation report 2019-2022"
+output: 
+  html_document: 
+    toc: yes
+date: "2023-04-05"
+editor_options: 
+  chunk_output_type: console
+---
+
+### Structure
+ - Methods
+  - show planet images, training polygons
+  - describe fitting XGBoost model
+  - show variable importance and confusion matrix
+  
+ - Results
+   - Land cover
+     - Land cover in 2019
+      - map + %% of each class
+     - Land cover in 2022
+       - map + %% of each class
+       
+   - Deforestation
+    - Show hotspots
+    - Calculate deforestation rates
+    - Compare with Global forest watch data
+
+## Motivation
+
+- Our understanding of land use and land use change in the areas around the FCAT reserve has been limited by the lack of GIS data available, mainly due to near-persistant cloud cover
+- The availability of high resolution, frequent satellite imagery from Planet has finally enabled us to quantify and visualize land cover at scale 
+- The goal of this analysis is to:
+  - Generate a high resolution (3m) land cover map of the FCAT reserve and surrounding areas
+  - Quantify deforestation rates and identify deforestation hotspots across time
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## Load libraries
+  library(terra)
+  library(tidyverse)
+
+## Load rasters
+  ras2019 <- terra::rast("../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif")
+  ras2022 <- terra::rast("../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif")
+  
+  # Extend 2019 raster so extents match
+  ras2019 <- extend(ras2019, ext(ras2022), fill = NA)
+
+  # Set RGB on rasters
+  RGB(ras2019) <- c(3,2,1)
+  t = colorize(ras2019, to = "col")
+  plot(ras2019)
+  RGB(ras2022) <- c(3,2,1)
+  plot(ras2022)
+  
+ plotRGB(ras2019, r = 3, g = 2 , b = 1, stretch = "lin")
+
+```
+
+```{r plot_planet_images}
+
+panel(c(ras2019, ras2022))
+
+
+
+```
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```

@@ -10,7 +10,8 @@ library(RemoteSensing) # for ndvi calculation
 # Load in trained model -------------------------------------------------------
 
   
-  load("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_03/2022_08_4band_FCATtoCachi - balanced - 2022_04_03.Rdata") ## test run for 2022_08
+  # load("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_03/2022_08_4band_FCATtoCachi - balanced - 2022_04_03.Rdata") ## test run for 2022_08
+    load("./output/2019_09_4band_FCATtoCachi - balanced - 2022_04_04/2019_09_4band_FCATtoCachi - balanced - 2022_04_04.Rdata")
 
 
 # Load in merged Raster to predict on ------------------------------------------
