@@ -12,32 +12,36 @@
 # Set parallel computing environment --------------------------------------
   library(parallel)
   library(doParallel)
-  cluster <- makeCluster(detectCores() - 2) # convention to leave 1 core for OS
+  cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
   registerDoParallel(cluster)
 
 
 # Set seed for reproducibility --------------------------------------------
 
   set.seed(42)
+  
+
+# Decide whether to do hyperparameter tuning ------------------------------
+
+  hyperparameter_tuning = FALSE
 
 
 # Set run name, paths to raster, and training polygons -------------------------------
   
   # Set name for model run
-  # run_name <- "2022_08_4band_FCATtoCachi - balanced - 2022_04_03"
-  
-  run_name <- "2019_09_4band_FCATtoCachi - balanced - 2022_04_04"
+  run_name <- "2022_08_4band_FCATtoCachi - 2022_04_19"
+  # run_name <- "2019_09_4band_FCATtoCachi - 2022_04_20"
   
   # Create directory in output folder
   dir.create(paste0("./output/", run_name))
   
   # Path to raster merged using 01_merge_raster.R
-  # path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
-  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
+  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
+  # path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
   
   # Path to training polygons
-  # path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
-  path_to_training_polys <- "class_shapefiles/2019_09 classes.shp"
+  path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
+  # path_to_training_polys <- "class_shapefiles/2019_09 classes.shp"
   
   
 # Load in merged raster ---------------------------------------------------
@@ -109,7 +113,7 @@
     )
 
 
-# Summarize spectral signatures -------------------------------------------
+# Plot and summarize spectral signatures -------------------------------------------
   dat_sum <- dat %>%
     group_by(class) %>%
     summarize_all(mean) %>%
@@ -118,20 +122,34 @@
     rename(mean = value)
   
   dat_sum <- left_join(dat_sum, 
-                       dat %>%
+                       left_join(dat %>%
                          group_by(class) %>%
-                         summarize_all(sd) %>%
+                         summarize_all(min) %>%
                          dplyr::select(-ID) %>%
                          pivot_longer(-class) %>%
-                         rename(sd = value))
+                         rename(min = value),
+                         dat %>%
+                           group_by(class) %>%
+                           summarize_all(max) %>%
+                           dplyr::select(-ID) %>%
+                           pivot_longer(-class) %>%
+                           rename(max = value)))
   
   ggplot(dat_sum, aes(x = as.factor(class), y = mean, col = as.factor(class))) + 
-    geom_pointrange(aes(ymax = mean + sd, ymin = mean - sd), 
+    geom_pointrange(aes(ymax = max, ymin = min), 
                     position=position_dodge(0.3)) +
     facet_wrap(~name, scales = "free_y") + 
     theme_bw()
 
   rm(dat_sum)
+  
+  # Violin plot
+  ggplot(dat %>% dplyr::select(-ID) %>% pivot_longer(-class), aes(x = as.factor(class), y = value, 
+                                                                  col = as.factor(class), 
+                                                                  fill = as.factor(class))) + 
+    geom_violin(position=position_dodge(0.3)) +
+    facet_wrap(~name, scales = "free_y") + 
+    theme_bw()
 
 
 
@@ -170,17 +188,19 @@
   pixel_count_test
   
   # Balance sample sizes among classes
-  dat_train_balanced <- dat_train %>% 
+  dat_train <- dat_train %>%
                   group_by(class) %>%
                   sample_n(size = min(pixel_count_train$n))
-  
-  dat_test_balanced <- dat_test %>% 
-                  group_by(class) %>% 
+
+  dat_test <- dat_test %>%
+                  group_by(class) %>%
                   sample_n(size = min(pixel_count_test$n))
 
   
 # Setting up hyperparameter optimization ----------------------------------
 
+if(hyperparameter_tuning){  
+  
   # Define hyperparameters to optimize
   params <- list(
     eta = c(0.01, 0.05, 0.1, 0.3, .5, .9),
@@ -189,7 +209,7 @@
     subsample = c(.33, .66, 1),
     gamma = 0,
     colsample_bytree = c(0.2, .5, 1),
-    nrounds = c(200)
+    nrounds = c(200, 500, 750)
   )
 
   
@@ -199,7 +219,7 @@
   
   
   # Randomly subsample search space
-  n_combos <- 5 # How many parameter combos to test?
+  n_combos <- 250 # How many parameter combos to test?
   
   search_space <- search_space %>%
     sample_n(n_combos)
@@ -219,8 +239,8 @@
   start_time <- proc.time()
   
   xgb_grid <- caret::train(
-                  x = as.matrix(dat_train_balanced[, predictors]), 
-                  y = factor(dat_train_balanced$class),
+                  x = as.matrix(dat_train[, predictors]), 
+                  y = factor(dat_train$class),
                   method = "xgbTree",
                   trControl = ctrl,
                   tuneGrid = search_space,
@@ -238,25 +258,36 @@
   # Get the best hyperparameter combination
   best_params <- xgb_grid$bestTune
   
-  xgb_grid$results
-  xgb_grid$bestTune
-  xgb_grid$metric
+  # Save to file
+  write_csv(best_params,
+       file =  paste0("./output/", run_name, "/xgboost hyperparameter tuning.csv"), append = TRUE)
+  
+  
+  # xgb_grid$results
+  # xgb_grid$bestTune
+  # xgb_grid$metric
   
   # >   xgb_grid$bestTune
   # nrounds max_depth  eta gamma colsample_bytree min_child_weight subsample
-  #  1000         5 0.05     0              0.9                1       0.6
-   # best_params <- tibble(nrounds = 1000,
-   #                        max_depth = 5,
-   #                        eta = 0.05,
-   #                        gamma = 0,
-   #                        colsample_bytree = 0.9,
-   #                        min_child_weight = 1,
-   #                        subsample = 0.6)
+  #  750         5 0.05     0                1                4      0.66
   
-## Run final model
+} else {  
+  
+  
+  predictors <- c(four_band_names, "ndvi")
 
-  boost <- xgboost(data =  as.matrix(dat_train_balanced[, predictors]),
-                   label = as.numeric(factor(dat_train_balanced$class)) - 1,
+  best_params <- tibble(nrounds = 750,
+                        max_depth = 5,
+                        eta = 0.05,
+                        gamma = 0, 
+                        colsample_bytree = 0.75,
+                        min_child_weight = 4,
+                        subsample = 0.66)
+}
+
+## Run final model
+  boost <- xgboost(data =  as.matrix(dat_train[, predictors]),
+                   label = as.numeric(factor(dat_train$class)) - 1,
                    max_depth = best_params$max_depth,
                    eta = best_params$eta,
                    min_child_weight = best_params$min_child_weight,
@@ -265,7 +296,7 @@
                    nrounds = best_params$nrounds, # Do 500 or so for real model
                    early_stopping_rounds = 15, # stop if no improvement for 15 consecutive trees,
                    objective = "multi:softprob",
-                   num_class = length(table(factor(dat_train_balanced$class))))
+                   num_class = length(table(factor(dat_train$class))))
   
   boost
   
@@ -275,20 +306,11 @@
   importance
   xgb.plot.importance(importance)
   
-  
 
-# Save model output -------------------------------------------------------
-
-save(boost, four_band_names, predictors, path_to_merged_raster, 
-     run_name,
-    file =  paste0("./output/", run_name, "/", run_name, ".Rdata"))
-
-
-  
 # Validation against testing data ---------------------------------------------
 
   pred = predict(boost,
-                 newdata = as.matrix(dat_test_balanced[, predictors]),
+                 newdata = as.matrix(dat_test[, predictors]),
                  reshape = TRUE)
   
   head(pred)
@@ -296,11 +318,11 @@ save(boost, four_band_names, predictors, path_to_merged_raster,
   pred <- as_tibble(pred)
   head(pred)
   
-  colnames(pred) <- levels(factor(dat_test_balanced$class))
+  colnames(pred) <- levels(factor(dat_test$class))
   head(pred)
   
   # Add true class
-  pred$true_class <- dat_test_balanced$class
+  pred$true_class <- dat_test$class
   
   # Add pixel ID
   pred$pixelID <- 1:nrow(pred)
@@ -316,15 +338,24 @@ save(boost, four_band_names, predictors, path_to_merged_raster,
   
   
   # Print confusion matrix
-  confusionMatrix(factor(top_preds$true_class, 
-                         levels(factor(dat_train_balanced$class))),
+  confusion_mat <- confusionMatrix(factor(top_preds$true_class, 
+                         levels(factor(dat_train$class))),
                   factor(top_preds$class, 
-                         levels(factor(dat_train_balanced$class))),
+                         levels(factor(dat_train$class))),
                   mode = "prec_recall")
   
+  confusion_mat
 
-
-
+  
+  
+# Save model output -------------------------------------------------------
+  save(boost, four_band_names, predictors, 
+       path_to_merged_raster, 
+       run_name, confusion_mat,
+       file =  paste0("./output/", run_name, "/", run_name, ".Rdata"))
+  
+  
+  
 
 
 

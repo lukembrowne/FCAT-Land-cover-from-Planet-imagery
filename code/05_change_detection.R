@@ -22,8 +22,8 @@
 
 # Load in rasters ---------------------------------------------------------
 
-ras2019 <- terra::rast("./output/2019_09_4band_FCATtoCachi - balanced - 2022_04_04/2019_09_4band_FCATtoCachi - balanced - 2022_04_04.tif")
-ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_03/2022_08_4band_FCATtoCachi - balanced - 2022_04_03_sieved100.tif")
+ras2019 <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20_sieved100.tif")
+ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_4band_FCATtoCachi - 2022_04_19_sieved100.tif")
 
 
 
@@ -77,7 +77,7 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_
 # Save to file ------------------------------------------------------------
 
   writeRaster(ras_change, 
-              paste0("output/change 2019-2022.tif"),
+              paste0("output/change 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
   
   
@@ -104,7 +104,7 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_
   
   # Write to file
   writeRaster(ras_deforest, 
-              paste0("output/deforestation 2019-2022.tif"),
+              paste0("output/deforestation 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
 
   
@@ -119,7 +119,7 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_
   
   # Write to file
   writeRaster(ras_deforest_sieve100, 
-              paste0("output/deforestation sieve 100 2019-2022.tif"),
+              paste0("output/deforestation sieve 100 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
   
   

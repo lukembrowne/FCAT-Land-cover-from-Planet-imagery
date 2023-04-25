@@ -6,13 +6,21 @@ library(xgboost)
 library(terra)
 library(RemoteSensing) # for ndvi calculation
 
+# Set parallel computing environment --------------------------------------
+# library(parallel)
+# library(doParallel)
+# library(foreach)
+# cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+# registerDoParallel(cluster)
+
 
 # Load in trained model -------------------------------------------------------
 
   
   # load("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_03/2022_08_4band_FCATtoCachi - balanced - 2022_04_03.Rdata") ## test run for 2022_08
-    load("./output/2019_09_4band_FCATtoCachi - balanced - 2022_04_04/2019_09_4band_FCATtoCachi - balanced - 2022_04_04.Rdata")
-
+  # load("./output/2019_09_4band_FCATtoCachi - balanced - 2022_04_04/2019_09_4band_FCATtoCachi - balanced - 2022_04_04.Rdata")
+  # load("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_18/2022_08_4band_FCATtoCachi - balanced - 2022_04_18.Rdata") # After adding more clouds to training set
+  # load("./output/2019_09_4band_FCATtoCachi - 2022_04_19/2019_09_4band_FCATtoCachi - 2022_04_19.Rdata") # Testing out not using balanced dataset
 
 # Load in merged Raster to predict on ------------------------------------------
 
@@ -41,7 +49,7 @@ library(RemoteSensing) # for ndvi calculation
 # Predict across entire raster --------------------------------------------
   
 # Cut prediction raster into slices to speed things up and reduce amount of memory needed
-  n_cuts = 30
+  n_cuts = 10
   
   cuts <- round(seq(1, nrow(ras_dat), len = n_cuts))
   cut_starts <- cuts[1:(n_cuts - 1)]
@@ -53,15 +61,16 @@ library(RemoteSensing) # for ndvi calculation
   
   # Initialize output data frame
   pred_out <- tibble(pixelID = 1:nrow(ras_dat),
-                     top_pred = NA)
+                     top_pred = NA,
+                     confidence = NA)
   
   
 # Loop over intervals  
-for(x in 1:(n_cuts - 1))  {
-  
+for(x in 1:(n_cuts - 1)) {
+    
   cat("Working on cut: ", x, " ... \n" )
   
-  # Set up new dataframe
+  # Set up new data frame
   newdata <- as.matrix(ras_dat[cut_starts[x]:cut_ends[x], c(predictors)])
 
   # Predict on model
@@ -70,30 +79,29 @@ for(x in 1:(n_cuts - 1))  {
   pred_all <- predict(boost, 
                      newdata = newdata,
                      reshape = TRUE)
-  pred_all
+  # pred_all
   
   # Transform to tibble
   pred_all <- as_tibble(pred_all)
   # head(pred_all)
   
   cat("Choosing top prediction for each pixel ... \n" )
-  pred_all <- pred_all %>%
-    mutate(top_pred = apply(pred_all, MARGIN = 1, function(x) which.max(x)),
-           pixelID =  cut_starts[x]:cut_ends[x]
-  )
-  
-  
+  top_pred <- apply(pred_all, MARGIN = 1, function(x) which.max(x))
+  confidence <- apply(pred_all, MARGIN = 1, function(x) max(x))
+
   # Replace NAs
-  pred_all[which(is.na(newdata[, 1])), "top_pred"] <- NA # Will make NA 
+  top_pred[is.na(newdata[, 1])] <- NA # Will make NA 
   
   # Join with output dataset
   cat("Joining with output ... \n" )
-  pred_out$top_pred[cut_starts[x]:cut_ends[x]] <- pred_all$top_pred
-  
+  pred_out$top_pred[cut_starts[x]:cut_ends[x]] <- top_pred
+  pred_out$confidence[cut_starts[x]:cut_ends[x]] <- confidence
+
   # Cleanup
   rm(newdata)
   rm(pred_all)
-  
+  rm(top_pred)
+  rm(confidence)
 
 } # End loop over cuts
 
@@ -101,12 +109,16 @@ for(x in 1:(n_cuts - 1))  {
 table(pred_out$top_pred)
 
 ## Replace data into raster
-ras_out <- ras[[1]] # Initialize with just one layer to save memory
+ras_out <- ras[[c(1,2)]] # Initialize with just one layer to save memory
 
-values(ras_out) <- as.numeric(factor(pred_out$top_pred)) 
+# Add in predictions
+values(ras_out[[1]]) <- as.numeric(factor(pred_out$top_pred)) 
 
-# Reset name
-names(ras_out) <- "class"
+# Add in confidence
+values(ras_out[[2]]) <- pred_out$confidence
+
+# Reset names
+names(ras_out) <- c("class", "confidence")
 
 
 # Write raster to file ----------------------------------------------------
