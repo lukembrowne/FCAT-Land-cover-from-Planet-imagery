@@ -351,7 +351,8 @@ if(hyperparameter_tuning){
 # Save model output -------------------------------------------------------
   save(boost, four_band_names, predictors, 
        path_to_merged_raster, 
-       run_name, confusion_mat,
+       run_name, 
+       confusion_mat,
        file =  paste0("./output/", run_name, "/", run_name, ".Rdata"))
   
   

@@ -5,7 +5,8 @@
   library(terra)
   library(tidyverse)
 
-# Load in GFW alerts
+# Load in GFW alerts - https://www.globalforestwatch.org/blog/data-and-research/integrated-deforestation-alerts/
+# https://data.globalforestwatch.org/datasets/gfw::integrated-deforestation-alerts/about
     alerts <- terra::rast("../../../Satellite imagery/GFW Deforestation alerts/10N_080W.tif")
     alerts
     

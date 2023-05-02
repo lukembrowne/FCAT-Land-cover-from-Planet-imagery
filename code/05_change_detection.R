@@ -3,21 +3,13 @@
 
   library(terra)
 
-# Try reclassifying the rasters to a different scale of numbers, such as
-# 
-# urban = 1
-# ag = 10
-# forest = 100
-# water = 1000
-# Then just subtract the rasters in Raster Calculator:
-#   
-#   0 will mean unchanged.
-# 9 will mean ag --> urban
-# -9 will mean urban --> ag
-# 99 will mean forest --> urban
-# 90 will mean forest --> ag
-# -99 will mean urban --> forest etc.
 
+
+# Make output directory ---------------------------------------------------
+
+# Create directory in output folder
+out_dir <- paste0("./output/change analysis ", Sys.Date(), "/")
+dir.create(out_dir)
 
 
 # Load in rasters ---------------------------------------------------------
@@ -52,10 +44,9 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_
   # freq(ras2019)
   # freq(ras2022)
   
-  ras2019 <- terra::subst(ras2019, from = c(1, 2, 3, 4), to = c(1, 10, 100, 1000))
+  ras2019 <- terra::subst(ras2019, from = c(0, 1, 2, 3, 4), to = c(NA, 1, 10, 100, 1000))
   ras2022 <- terra::subst(ras2022, from = c(0, 1, 2, 3, 4), to = c(NA, 1, 10, 100, 1000))
-  ras2022[ras2022 < 1] <- NA # For some reason there are 0s in the 2022 raster - set them to NA
-  
+
   # freq(ras2019)
   # freq(ras2022)
 
@@ -65,6 +56,10 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_
   ras2019 <- extend(ras2019, ext(ras2022), fill = NA)
   ras2019
   
+  sum(is.na(c(values(ras2019)))) # Number of NAs
+  sum(is.na(c(values(ras2022)))) # Number of NAs
+  
+  
 
 # Subtract rasters to calculate change ------------------------------------
 
@@ -72,39 +67,43 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_
   ras_change
   # plot(ras_change)
   freq(ras_change)
+  sum(is.na(c(values(ras_change)))) # Number of NAs
+  
+  terra::global(x = ras_change, "isNA")
 
   
 # Save to file ------------------------------------------------------------
 
   writeRaster(ras_change, 
-              paste0("output/change 2019-2022 - ", Sys.Date(), ".tif"),
+              paste0(out_dir, "change 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
   
   
 
 # Convert so that only deforestation is shown -----------------------------
 
-  # Need to set all cloud and shadow related values to NA?
-  
   # Initialize
   ras_deforest <- ras_change  
+    
+  # Set anything related to clouds or shadows to -99
+  ras_deforest[ras_deforest %in% c(99, -99, 90, -90, 900, -900, 990, -990, 999, -999)] <- -999 
   
-  # Set anything related to clouds or shadows to NA
-  ras_deforest[ras_deforest %in% c(99, -99, 90, -90, 900, -900, 990, -990, 999, -999)] <- NA 
+  # Set reforestation as 1
+  ras_deforest[ras_deforest %in% c(9)] <- 1 
   
-  # Set reforestation as NA
-  ras_deforest[ras_deforest %in% c(9)] <- NA 
-  
-  # Set deforestation to 1
-  ras_deforest[ras_deforest == -9] <- 1 
+  # Set deforestation to -1
+  ras_deforest[ras_deforest == -9] <- -1 
   
   freq(ras_deforest)
   
   plot(ras_deforest)
   
+  sum(is.na(c(values(ras_deforest)))) # Number of NAs
+  
+  
   # Write to file
   writeRaster(ras_deforest, 
-              paste0("output/deforestation 2019-2022 - ", Sys.Date(), ".tif"),
+              paste0(out_dir, "forest change 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
 
   
@@ -113,31 +112,14 @@ ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_
 
   ras_deforest_sieve100 <- terra::sieve(ras_deforest, threshold = 100)
   freq(ras_deforest_sieve100)
-
-  # Resubstitute NA values  
-  ras_deforest_sieve100[!(ras_deforest_sieve100 %in% c(0, 1))] <- NA
+  sum(is.na(c(values(ras_deforest_sieve100)))) # Number of NAs
+  
+  # Resubstitute NA values
+  ras_deforest_sieve100[is.na(ras_deforest)] <- NA
+  sum(is.na(c(values(ras_deforest_sieve100)))) # Number of NAs
   
   # Write to file
   writeRaster(ras_deforest_sieve100, 
-              paste0("output/deforestation sieve 100 2019-2022 - ", Sys.Date(), ".tif"),
+              paste0(out_dir, "forest change sieve 100 2019-2022 - ", Sys.Date(), ".tif"),
               overwrite=TRUE)
   
-  
-
-# Testing out moving windows ----------------------------------------------
-
-  ras_deforest_sieve100_focal <- terra::focal(ras_deforest_sieve100, 
-                       w = 33, # Multiply by this by 3m (resolution of Planet Imagery to get window size) - ~100m window size here
-                       fun = function(x) sum(x, na.rm = TRUE)/sum(!is.na(x))) # Custom function to calculate %% deforestation in 
-
- plot(ras_deforest_sieve100_focal)  
-  
-# Write to file
-  writeRaster(ras_deforest_sieve100_focal, 
-              paste0("output/deforestation zonal 2019-2022.tif"),
-              overwrite=TRUE)
-  
-
-
-
-
