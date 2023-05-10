@@ -7,10 +7,18 @@
 
   # load("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_4band_FCATtoCachi - 2022_04_19.Rdata") 
 # load("./output/2019_09_4band_FCATtoCachi - balanced - 2022_04_04/2019_09_4band_FCATtoCachi - balanced - 2022_04_04.Rdata")
-load("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20.Rdata") 
+# load("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20.Rdata") 
+# load("./output/2019_09_4band_FCATtoCachi - 2023_05_02/2019_09_4band_FCATtoCachi - 2023_05_02.Rdata")
+# load("./output/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1.Rdata")
+
 
   # load raster to sieve
-  ras_to_sieve <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20.tif")
+  # ras_to_sieve <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20.tif")
+  # ras_to_sieve <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2023_05_02/2019_09_4band_FCATtoCachi - 2023_05_02.tif")
+  # ras_to_sieve <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1.tif")
+  ras_to_sieve <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2023_05_09/2022_08_4band_FCATtoCachi - 2023_05_09.tif")
+  
+  
 
 # Sieve raster to smooth and reduce number of isolated pixels ---------------------------------------------------------
 

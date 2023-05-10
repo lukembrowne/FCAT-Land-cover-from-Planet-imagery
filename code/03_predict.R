@@ -22,6 +22,8 @@ library(RemoteSensing) # for ndvi calculation
   # load("./output/2022_08_4band_FCATtoCachi - balanced - 2022_04_18/2022_08_4band_FCATtoCachi - balanced - 2022_04_18.Rdata") # After adding more clouds to training set
   # load("./output/2019_09_4band_FCATtoCachi - 2022_04_19/2019_09_4band_FCATtoCachi - 2022_04_19.Rdata") # Testing out not using balanced dataset
 
+# load("./output/2022_08_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1/2022_08_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1.Rdata") 
+
 # Load in merged Raster to predict on ------------------------------------------
 
   # Load raster
@@ -38,10 +40,10 @@ library(RemoteSensing) # for ndvi calculation
 # Calculate vegetation indices --------------------------------------------
 
   ras_dat <- ras_dat %>%
-    mutate(ndvi = ndvi(red, nir),
-           savi = savi(red, nir),  # Soil-Adjusted Vegetation Index
-           arvi = arvi(red, nir, blue) # Atmosphere Antivegetation Index
-    )
+    mutate(ndvi = RemoteSensing::ndvi(red, nir),
+           # savi = RemoteSensing::savi(red, nir),  # Soil-Adjusted Vegetation Index
+           # arvi = RemoteSensing::arvi(red, nir, blue), # Atmosphere Antivegetation Index
+           ndwi = RemoteSensing::ndwi(green, nir))
 
   head(ras_dat)
 

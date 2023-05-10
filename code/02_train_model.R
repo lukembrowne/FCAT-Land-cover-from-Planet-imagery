@@ -29,36 +29,35 @@
 # Set run name, paths to raster, and training polygons -------------------------------
   
   # Set name for model run
-  run_name <- "2022_08_4band_FCATtoCachi - 2022_04_19"
-  # run_name <- "2019_09_4band_FCATtoCachi - 2022_04_20"
+  # run_name <- "2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1"
+  run_name <- "2022_08_4band_FCATtoCachi - 2023_05_09"
   
   # Create directory in output folder
   dir.create(paste0("./output/", run_name))
   
   # Path to raster merged using 01_merge_raster.R
-  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
   # path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
+  path_to_merged_raster <- "../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"
   
   # Path to training polygons
-  path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
   # path_to_training_polys <- "class_shapefiles/2019_09 classes.shp"
+  path_to_training_polys <- "class_shapefiles/2022_08 classes.shp"
+  
+  # Set layer names for four band imagery 
+  # If using 8 band Planet imagery - c("coastal_blue", "blue", "green_i", "green", "yellow",
+  #                       "red", "rededge", "nir")
+  # names(ras) <- eight_band_names
+  four_band_names <- c("blue", "green", "red", "nir")
+  
+  # Set predictors in model
+  predictors <- c(four_band_names, "ndvi", "ndwi")
   
   
 # Load in merged raster ---------------------------------------------------
 
   # Load raster
   ras <- terra::rast(path_to_merged_raster)
-  
-  # Set layer names for four band imagery
-  four_band_names <- c("blue", "green", "red", "nir")
   names(ras) <- four_band_names  
-  
-    # If using 8 band Planet imagery
-    # eight_band_names <- c("coastal_blue", "blue", "green_i", "green", "yellow",
-    #                       "red", "rededge", "nir")
-    # names(ras) <- eight_band_names
-
-  
   
 # Read in training polygons ------------------------------------------
   
@@ -102,14 +101,19 @@
   dat <- dat %>% 
     filter(class != 5)
   
+  # Combine cloud wispy cloud class into overall cloud class
+  dat$class[dat$class == 6] <- 3
+    
+  
 
 # Calculate vegetation indices --------------------------------------------
 # https://www.hindawi.com/journals/js/2017/1353691/
 # Need remote sensing package
     dat <- dat %>%
     mutate(ndvi = RemoteSensing::ndvi(red, nir),
-           savi = RemoteSensing::savi(red, nir),  # Soil-Adjusted Vegetation Index
-           arvi = RemoteSensing::arvi(red, nir, blue) # Atmosphere Antivegetation Index
+           # savi = RemoteSensing::savi(red, nir),  # Soil-Adjusted Vegetation Index
+           # arvi = RemoteSensing::arvi(red, nir, blue), # Atmosphere Antivegetation Index
+           ndwi = RemoteSensing::ndwi(green, nir)
     )
 
 
@@ -153,6 +157,50 @@
 
 
 
+# Unsupervised clustering to compare spectral signatures ------------------
+
+  # Kmeans clustering - elbow method
+  wss <- sapply(1:10, function(k) kmeans(dat %>% dplyr::select(-c(ID, class)), k)$tot.withinss) # calculate the WSS for k=1 to 10
+  plot(1:10, wss, type = "b", xlab = "Number of clusters", ylab = "Within-cluster sum of squares")
+
+  # Run clustering
+  kmeans_out <- kmeans(dat %>% dplyr::select(-c(ID, class)), 5)
+  
+  # Tally up predicted cluster vs. assigned
+  out <- tibble(orig = dat$class,
+                pred = kmeans_out$cluster)
+  
+  out
+  
+  out_sum <- out %>%
+              group_by(pred, orig) %>%
+              tally()
+  
+  # Plot
+  ggplot(out_sum, aes(x = orig, y = n, fill = factor(pred))) + 
+    geom_bar(stat = "identity") + 
+    theme_bw(12)
+  
+  ggplot(out_sum, aes(x = pred, y = n, fill = factor(orig))) + 
+    geom_bar(stat = "identity") + 
+    theme_bw(12)
+  
+  
+  # Test out PCA
+  pca <- prcomp(dat %>% dplyr::select(-c(ID, class)) %>% mutate_all(scale))
+  summary(pca)
+  
+  ggplot(data = as.data.frame(pca$x[,1:2]), aes(x = PC1, y = PC2, col = factor(dat$class))) + 
+    geom_point(alpha = 0.05) + 
+    scale_color_manual(values = c("green", "yellow", "grey20", "black", "red")) + 
+    theme_bw(12)
+  
+  
+  ## Filter based on PCA
+  # dat <- dat[!(pca$x[, 1] < -1 & dat$class == 2), ]
+  
+  
+  
 # Split into training and testing data based on polygons   ----------------------------------
 
 
@@ -188,13 +236,13 @@
   pixel_count_test
   
   # Balance sample sizes among classes
-  dat_train <- dat_train %>%
-                  group_by(class) %>%
-                  sample_n(size = min(pixel_count_train$n))
-
-  dat_test <- dat_test %>%
-                  group_by(class) %>%
-                  sample_n(size = min(pixel_count_test$n))
+  # dat_train <- dat_train %>%
+  #                 group_by(class) %>%
+  #                 sample_n(size = min(pixel_count_train$n))
+  # 
+  # dat_test <- dat_test %>%
+  #                 group_by(class) %>%
+  #                 sample_n(size = min(pixel_count_test$n))
 
   
 # Setting up hyperparameter optimization ----------------------------------
@@ -203,86 +251,78 @@ if(hyperparameter_tuning){
   
   # Define hyperparameters to optimize
   params <- list(
-    eta = c(0.01, 0.05, 0.1, 0.3, .5, .9),
+    eta = c(0.01, 0.1, 0.3, .9),
     max_depth = c(3, 5, 7, 9),
     min_child_weight = c(1, 4, 7),
     subsample = c(.33, .66, 1),
     gamma = 0,
-    colsample_bytree = c(0.2, .5, 1),
-    nrounds = c(200, 500, 750)
+    colsample_bytree = c(0.33, .66, 1),
+    nrounds = c(200, 500, 1000)
   )
 
   
   # Define search space
-  search_space <- expand.grid(params) 
-  dim(search_space)
+  search_space_full <- expand.grid(params) 
+  dim(search_space_full)
   
+  # How many parameter combos to test?
+  n_combos <- 100 
   
-  # Randomly subsample search space
-  n_combos <- 250 # How many parameter combos to test?
-  
-  search_space <- search_space %>%
-    sample_n(n_combos)
-  
-  # Set up hyperparameter optimization parameters
-  ctrl <- trainControl(method = "cv", 
-                       number = 5, 
-                       verboseIter = TRUE,
-                       search = "random",
-                       allowParallel = TRUE)
-  
-  
-  predictors <- c(four_band_names, "ndvi")
-  
+  for(combo in 1:n_combos){
+    
+    cat("Working on combo: ", combo, " ... \n")
+    
+    # Randomly subsample search space
+    search_space <- search_space_full %>%
+      sample_n(1)
+    
+    # Set up hyperparameter optimization parameters
+    ctrl <- trainControl(method = "cv", 
+                         number = 5, 
+                         verboseIter = TRUE,
+                         search = "random",
+                         allowParallel = TRUE,
+                         indexFinal = 1) # Use to avoid fitting a full final model
+    
+    
+    
+    # Use grid search
+    start_time <- proc.time()
+    
+    xgb_grid <- caret::train(
+                    x = as.matrix(dat_train[, predictors]), 
+                    y = factor(dat_train$class),
+                    method = "xgbTree",
+                    trControl = ctrl,
+                    tuneGrid = search_space,
+                    verbose = TRUE
+                    )
+    
+    # Calculate how long it took
+    end_time <- proc.time()
+    time_diff <- end_time - start_time
+    print(time_diff["elapsed"]/60) # Time in minutes
+    
+    
+    
+    
+    # Get the best hyperparameter combination
+    # best_params <- xgb_grid$bestTune
+    
+    # Save to file
+    write_csv(xgb_grid$results,
+         file =  paste0("./output/", run_name, "/xgboost hyperparameter tuning.csv"), append = TRUE)
+    
+  } # End combo loop
 
-  # Use grid search
-  start_time <- proc.time()
-  
-  xgb_grid <- caret::train(
-                  x = as.matrix(dat_train[, predictors]), 
-                  y = factor(dat_train$class),
-                  method = "xgbTree",
-                  trControl = ctrl,
-                  tuneGrid = search_space,
-                  verbose = FALSE
-                  )
-  
-  # Calculate how long it took
-  end_time <- proc.time()
-  time_diff <- end_time - start_time
-  print(time_diff["elapsed"]/60) # Time in minutes
-  
-  
-  
-  
-  # Get the best hyperparameter combination
-  best_params <- xgb_grid$bestTune
-  
-  # Save to file
-  write_csv(best_params,
-       file =  paste0("./output/", run_name, "/xgboost hyperparameter tuning.csv"), append = TRUE)
-  
-  
-  # xgb_grid$results
-  # xgb_grid$bestTune
-  # xgb_grid$metric
-  
-  # >   xgb_grid$bestTune
-  # nrounds max_depth  eta gamma colsample_bytree min_child_weight subsample
-  #  750         5 0.05     0                1                4      0.66
-  
 } else {  
   
+  grid_results <- read_csv(paste0("./output/", run_name, "/xgboost hyperparameter tuning.csv"), 
+                           col_names = c("eta", "max_depth", "min_child_weight", "subsample", "gamma", "colsample_bytree", "nrounds",  "Accuracy", "Kappa", "AccuracySD", "KappaSD"))
   
-  predictors <- c(four_band_names, "ndvi")
-
-  best_params <- tibble(nrounds = 750,
-                        max_depth = 5,
-                        eta = 0.05,
-                        gamma = 0, 
-                        colsample_bytree = 0.75,
-                        min_child_weight = 4,
-                        subsample = 0.66)
+  best_params <- grid_results %>%
+                arrange(desc(Accuracy)) %>%
+                head(1)
 }
 
 ## Run final model
@@ -296,6 +336,7 @@ if(hyperparameter_tuning){
                    nrounds = best_params$nrounds, # Do 500 or so for real model
                    early_stopping_rounds = 15, # stop if no improvement for 15 consecutive trees,
                    objective = "multi:softprob",
+                   nthread = 8,
                    num_class = length(table(factor(dat_train$class))))
   
   boost
@@ -307,6 +348,7 @@ if(hyperparameter_tuning){
   xgb.plot.importance(importance)
   
 
+  
 # Validation against testing data ---------------------------------------------
 
   pred = predict(boost,

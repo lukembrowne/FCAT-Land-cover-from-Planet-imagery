@@ -14,9 +14,12 @@ dir.create(out_dir)
 
 # Load in rasters ---------------------------------------------------------
 
-ras2019 <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20_sieved100.tif")
-ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_4band_FCATtoCachi - 2022_04_19_sieved100.tif")
+# ras2019 <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2022_04_20/2019_09_4band_FCATtoCachi - 2022_04_20_sieved100.tif")
+# ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2022_04_19/2022_08_4band_FCATtoCachi - 2022_04_19_sieved100.tif")
 
+
+ras2019 <- terra::rast("./output/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1_sieved100.tif")
+ras2022 <- terra::rast("./output/2022_08_4band_FCATtoCachi - 2023_05_09/2022_08_4band_FCATtoCachi - 2023_05_09_sieved100.tif")
 
 
 #  Convert raster values to: ----------------------------------------------
