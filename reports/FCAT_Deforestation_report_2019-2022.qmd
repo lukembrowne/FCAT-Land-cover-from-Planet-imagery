@@ -1,22 +1,19 @@
 ---
-title: "Monitoring local scale deforestation in western Ecuador 2019-2022: A case
-  study of the FCAT Reserve and surrounding areas"
-author: ""
-date: "2023-05-01"
-output:
-  word_document:
-    toc: yes
-    toc_depth: 3
-    fig_caption: yes
-    number_sections: yes
-  html_document:
-    toc: yes
-    toc_depth: '3'
-    df_print: paged
-email: "lukebrowne@fcat-ecuador.org"
-editor_options:
+title: "FCAT_Deforestation_report_2019-2022"
+format: 
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    number-sections: true
+    embed-resources: true
+    code-overflow: wrap
+    theme: sandstone
+editor: source
+editor_options: 
   chunk_output_type: console
 ---
+
 
 
 ```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
@@ -28,17 +25,18 @@ knitr::opts_chunk$set(
   library(tidyverse)
   library(xgboost)
   library(patchwork)
+  library(here)
 
 ## Load rasters
-  ras2019 <- terra::rast("../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif")
-  ras2022 <- terra::rast("../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif")
+  ras2019 <- terra::rast(here("../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"))
+  ras2022 <- terra::rast(here("../../../Satellite imagery/Planet imagery/2022_08 - FCAT to Chachi - 4 band harmonized/20220815_merged_3B_AnalyticMS_SR_harmonized_clip.tif"))
   
 # Load land classification model runs
-  run2019 <- "./output/2019_09_4band_FCATtoCachi - 2022_04_20/"
+  run2019 <- here("./output/2019_09_4band_FCATtoCachi - 2023_05_09 - PCA filtered 1/")
   cover2019 <- terra::rast(list.files(run2019, full.names = T)[1])
   mod2019 <-   list.files(run2019, full.names = T)[2]
 
-  run2022 <- "./output/2022_08_4band_FCATtoCachi - 2022_04_19/"
+  run2022 <- here("./output/2022_08_4band_FCATtoCachi - 2023_05_09/")
   cover2022 <- terra::rast(list.files(run2022, full.names = T)[1])
   mod2022 <-   list.files(run2022, full.names = T)[2]
   
@@ -54,7 +52,7 @@ knitr::opts_chunk$set(
 
   
 # Load in focal zone raster
-focal_zone <- terra::vect("./class_shapefiles/Focal_zone_deforestation_report.shp")
+focal_zone <- terra::vect(here("./class_shapefiles/Focal_zone_deforestation_report.shp"))
 focal_zone <- focal_zone[2] # Change up which focal zone to use here. Second is smaller than first
 
 # Crop rasters to focal zone
@@ -62,19 +60,19 @@ cover2019_focal <- terra::crop(cover2019, focal_zone)
 cover2022_focal <- terra::crop(cover2022, focal_zone)
 
 # Load relevant shapefiles
-  bilsa <- terra::vect("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg",
+  bilsa <- terra::vect(here("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg"),
                        layer = "Reserve Boundary - Bilsa")
   bilsa <- project(bilsa, ras2019)
   
-  MCR <- terra::vect("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg",
+  MCR <- terra::vect(here("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg"),
                        layer = "Reserve Boundary - REMACH")
   MCR <- project(MCR, ras2019)
 
-  fcat <- terra::vect("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg",
+  fcat <- terra::vect(here("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg"),
                        layer = "FCAT - Reserve Boundary 2023_01_19")
   fcat <- project(fcat, ras2019)
   
-  laguna <- terra::vect("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg",
+  laguna <- terra::vect(here("../../../FCAT GIS Databases/FCAT_GIS - Boundaries, Roads, Rivers, Trails - 2023_01_19.gpkg"),
                        layer = "La Laguna boundary") 
   laguna <- project(laguna, ras2019)
   
@@ -90,7 +88,7 @@ fcat_out_focal_zone <- erase(focal_zone, fcat)
 
 
 # Load in deforestation raster
-change <- terra::rast("./output/change analysis 2023-05-02/forest change sieve 100 2019-2022 - 2023-05-02.tif")
+change <- terra::rast(here("./output/change analysis 2023-05-10/forest change sieve 100 2019-2022 - 2023-05-10.tif"))
 change_focal <- crop(change, focal_zone)
 
 
@@ -240,23 +238,25 @@ cover_stats_sum_forest <- cover_stats_sum %>%
 # Calculate cover stats in and outside of MCR
 cover_stats_MCR <- tibble(year = 2019,
                              MCR = "yes",
-                             class = terra::extract(cover2019_focal, MCR_in_focal_zone, ID = FALSE)$lyr1)
+                             class = terra::extract(cover2019_focal, MCR_in_focal_zone, ID = FALSE)[, 1])
 
 cover_stats_MCR <- bind_rows(cover_stats_MCR, 
                           tibble(year = 2019,
                              MCR = "no",
-                             class = terra::extract(cover2019_focal, MCR_out_focal_zone, ID = FALSE)$lyr1))
+                             class = terra::extract(cover2019_focal, MCR_out_focal_zone, ID = FALSE)[, 1]))
 
 cover_stats_MCR <- bind_rows(cover_stats_MCR, 
                           tibble(year = 2022,
                              MCR = "yes",
-                             class = terra::extract(cover2022_focal, MCR_in_focal_zone, ID = FALSE)$class))
+                             class = terra::extract(cover2022_focal, MCR_in_focal_zone, ID = FALSE)[, 1]))
 
 
 cover_stats_MCR <- bind_rows(cover_stats_MCR, 
                           tibble(year = 2022,
                              MCR = "no",
-                             class = terra::extract(cover2022_focal, MCR_out_focal_zone, ID = FALSE)$class))
+                             class = terra::extract(cover2022_focal,
+                                                  MCR_out_focal_zone,
+                                                  ID = FALSE)[, 1]))
 
 
 # Overall
@@ -266,7 +266,10 @@ cover_stats_MCR_sum <- cover_stats_MCR %>%
   mutate(area_ha = (n * 9)/10000) %>% # Cell size is 9m2
   group_by(year, MCR) %>%
   mutate(area_perc = area_ha / sum(area_ha)) %>%
-  mutate(class = factor(class, labels = c("Forest", "Non-forest", "Cloud", "Shadow")))
+  mutate(class = factor(class, 
+                        labels = c("Forest", "Non-forest", 
+                                   "Cloud", "Shadow"),
+                        exclude=NULL))
 
 cover_stats_MCR_sum_forest <- cover_stats_MCR_sum %>%
                                   filter(class %in% c("Forest", "Non-forest")) %>%
@@ -277,23 +280,23 @@ cover_stats_MCR_sum_forest <- cover_stats_MCR_sum %>%
 # Calculating cover stats in and outside of FCAT Reserve
 cover_stats_fcat <- tibble(year = 2019,
                              fcat = "yes",
-                             class = terra::extract(cover2019_focal, fcat_in_focal_zone, ID = FALSE)$lyr1)
+                             class = terra::extract(cover2019_focal, fcat_in_focal_zone, ID = FALSE)[, 1])
 
 cover_stats_fcat <- bind_rows(cover_stats_fcat, 
                           tibble(year = 2019,
                              fcat = "no",
-                             class = terra::extract(cover2019_focal, fcat_out_focal_zone, ID = FALSE)$lyr1))
+                             class = terra::extract(cover2019_focal, fcat_out_focal_zone, ID = FALSE)[, 1]))
 
 cover_stats_fcat <- bind_rows(cover_stats_fcat, 
                           tibble(year = 2022,
                              fcat = "yes",
-                             class = terra::extract(cover2022_focal, fcat_in_focal_zone, ID = FALSE)$class))
+                             class = terra::extract(cover2022_focal, fcat_in_focal_zone, ID = FALSE)[, 1]))
 
 
 cover_stats_fcat <- bind_rows(cover_stats_fcat, 
                           tibble(year = 2022,
                              fcat = "no",
-                             class = terra::extract(cover2022_focal, fcat_out_focal_zone, ID = FALSE)$class))
+                             class = terra::extract(cover2022_focal, fcat_out_focal_zone, ID = FALSE)[, 1]))
 
 
 # Overall
@@ -403,12 +406,12 @@ sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
 ```{r calculate-deforestation-rates, include=FALSE}
 
 # Load and process GFW alerts and Hansen forest loss data
-gfw <- terra::rast("../../../Satellite imagery/GFW Deforestation alerts/10N_080W_cropped.tif")
+gfw <- terra::rast(here("../../../Satellite imagery/GFW Deforestation alerts/10N_080W_cropped.tif"))
 gfw <- project(gfw, focal_zone)
 gfw_focal <- crop(gfw, focal_zone)
 gfw_focal[is.na(gfw_focal)] <- 0 # Replace NA with 0 to indicate no alert
 
-hansen_loss <- terra::rast("../../../Satellite imagery/Hansen_ForestLossByYear/Hansen_GFC-2021-v1.9_lossyear_10N_080W_cropped_processed.tif")
+hansen_loss <- terra::rast(here("../../../Satellite imagery/Hansen_ForestLossByYear/Hansen_GFC-2021-v1.9_lossyear_10N_080W_cropped_processed.tif"))
 hansen_loss <- project(hansen_loss, focal_zone)
 hansen_loss_focal <- crop(hansen_loss, focal_zone)
 hansen_loss_focal[is.na(hansen_loss_focal)] <- 0 # Replace NA with 0 to indicate no alert
@@ -566,7 +569,7 @@ Another point of comparison of deforestation rates in the area comes from the [H
 
 ```{r hansen loss over time, fig.cap="Estimates of deforestation rates from 2001-2021 from Hansen et al. across the focal area, and inside and outside of MCR"}
 
-hansen_loss <- terra::rast("../../../Satellite imagery/Hansen_ForestLossByYear/Hansen_GFC-2021-v1.9_lossyear_10N_080W.tif")
+hansen_loss <- terra::rast(here("../../../Satellite imagery/Hansen_ForestLossByYear/Hansen_GFC-2021-v1.9_lossyear_10N_080W.tif"))
 
 # Reproject focal zone shapefiles to make it easier to extract data
 focal_zone2 <- project(focal_zone, hansen_loss)
@@ -622,7 +625,7 @@ Below, we highlight a few deforestation hot spots detected by the FCAT deforesta
 ```{r deforestation hotspots, fig.height=3, fig.width=8}
 
 # Load in shapefile with rectangles of spots to highlight for deforestation
-hotspots <- terra::vect("./reports/shapefiles/Deforestation hotspots.shp")
+hotspots <- terra::vect(here("./reports/shapefiles/Deforestation hotspots.shp"))
 
 
 # Start loop
@@ -694,7 +697,7 @@ This is meant to be a first step towards a more comprehensive and accurate land 
 
 
 # Load in shapefile with rectangles of spots to highlight for issues
-issues <- terra::vect("./reports/shapefiles/Issues.shp")
+issues <- terra::vect(here("./reports/shapefiles/Issues.shp"))
 
 # Start loop
 for(x in 1){
@@ -889,13 +892,13 @@ We then created a set of training polygons separate for each time period (2019 a
 
 
 # Load in class shapefiles
-training_2019 <- terra::vect("./class_shapefiles/2019_09 classes.shp")
-training_2022 <- terra::vect("./class_shapefiles/2022_08 classes.shp")
+training_2019 <- terra::vect(here("./class_shapefiles/2019_09 classes.shp"))
+training_2022 <- terra::vect(here("./class_shapefiles/2022_08 classes.shp"))
 
 # Convert classes to colors
 training_2019_colors <- factor(training_2019$class, 
                                labels = c("forestgreen", "#386cb0", 
-                                          "white", "grey80", "pink"))
+                                          "white", "grey80", "pink", "grey80"))
 training_2022_colors <- factor(training_2022$class, 
                                labels = c("forestgreen", "#386cb0", 
                                           "white", "grey80", "pink"))
@@ -930,23 +933,23 @@ legend("top", legend = c("FCAT", "Bilsa", "MCR"),
 
 
 # Compare areas of each class
-training_count <- bind_cols(tibble(class = training_2019$class, 
-                                   area_2019_ha = expanse(training_2019)/10000) %>%
-                              group_by(class) %>%
-                              summarize(area_2019_ha = sum(area_2019_ha),
-                                        number_of_polygons_2019 = length(class)),
-                            tibble(class = training_2022$class, 
-                                   area_2022_ha = expanse(training_2022)/10000) %>%
-                              group_by(class) %>%
-                              summarize(area_2022_ha = sum(area_2022_ha),
-                                        number_of_polygons_2022 = length(class)) %>%
-                              select(-class)) %>%
-  mutate(class = factor(class, labels = c("forest", "non-forest", "cloud", "shadow", "built environment"))) %>%
-  mutate(area_2019_ha = round(area_2019_ha),
-         area_2022_ha = round(area_2022_ha))
-
-# Print out table
-knitr::kable(training_count %>% filter(class != "built environment"))
+# training_count <- bind_cols(tibble(class = training_2019$class, 
+#                                    area_2019_ha = expanse(training_2019)/10000) %>%
+#                               group_by(class) %>%
+#                               summarize(area_2019_ha = sum(area_2019_ha),
+#                                         number_of_polygons_2019 = length(class)),
+#                             tibble(class = training_2022$class, 
+#                                    area_2022_ha = expanse(training_2022)/10000) %>%
+#                               group_by(class) %>%
+#                               summarize(area_2022_ha = sum(area_2022_ha),
+#                                         number_of_polygons_2022 = length(class)) %>%
+#                               select(-class)) %>%
+#   mutate(class = factor(class, labels = c("forest", "non-forest", "cloud", "shadow", "built environment"))) %>%
+#   mutate(area_2019_ha = round(area_2019_ha),
+#          area_2022_ha = round(area_2022_ha))
+# 
+# # Print out table
+# knitr::kable(training_count %>% filter(class != "built environment"))
 ```
 
 
@@ -1067,5 +1070,4 @@ Quito, Ecuador. 216 pp. - https://www.proamazonia.org/wp-content/uploads/2021/06
 ```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
 
 ```
-
 
