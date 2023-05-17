@@ -1,5 +1,5 @@
 ---
-title: "FCAT_Deforestation_report_2019-2022"
+title: "Deforestation around the FCAT Reserve in northwest Ecuador: 2019-2022"
 format: 
   html:
     toc: true
@@ -8,24 +8,31 @@ format:
     number-sections: true
     embed-resources: true
     code-overflow: wrap
-    theme: sandstone
+    theme: simplex
+    link-external-icon: true
+    link-external-newwindow: true
+    fig-cap-location: top
+css: styles.css
+execute: 
+  echo: false
+  cache: true
 editor: source
 editor_options: 
   chunk_output_type: console
+bibliography: references.bib
 ---
 
-
-
-```{r setup, echo=FALSE, message = FALSE, warning = FALSE}
+```{r setup, echo=FALSE, message = FALSE, warning = FALSE, cache = FALSE}
 knitr::opts_chunk$set(
-	echo = FALSE
-)
+	echo = FALSE)
+
 ## Load libraries
   library(terra)
   library(tidyverse)
   library(xgboost)
   library(patchwork)
   library(here)
+  library(magick)
 
 ## Load rasters
   ras2019 <- terra::rast(here("../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"))
@@ -41,7 +48,6 @@ knitr::opts_chunk$set(
   mod2022 <-   list.files(run2022, full.names = T)[2]
   
   # Load models, variable importance and confusion matrices
-  
     load(mod2019)
     importance_2019 <- xgb.importance(feature_names = predictors, model = boost)
     confusion_2019 <- confusion_mat
@@ -98,290 +104,172 @@ change_focal <- crop(change, focal_zone)
 
 ```
 
+```{r starting-gifs, include=FALSE, ref.label=c("making-gifs")}
 
-\newpage 
+```
+
+\newpage
 
 # Summary
 
--   One of FCAT's long-term goals is to reverse forest loss in the areas surrounding the Mache-Chindul Reserve (MCR)
--   However the lack of cloud-free satellite imagery has been a major obstacle in quantifying and monitoring land-use change, and thus impeding our ability to track progress towards this goal 
--   Advancements in satellite imagery within the past 5 years from Planet labs has provided high resolution, frequent satellite images that capture rare cloud-free days, enabling us to quantify and visualize land cover at scale
--   The goal of this analysis is to:
-    -   Generate the first high resolution (3m) land cover map of the FCAT reserve and surrounding areas
-    -   Quantify deforestation rates and identify deforestation hot spots in the areas surrounding the FCAT reserve
-    -   Develop a replicable system for continual monitoring of land use change and deforestation in the project area
+-   Monitoring deforestation in tropical areas with near persistent cloud cover is been a long-standing challenge, but is essential to track progress towards ambitious goals to [end deforestation by 2030](https://www.bbc.com/news/science-environment-59088498)
+-   State of the art deforestation alert systems (such as the [GLAD Deforestation Alerts](https://www.globalforestwatch.org/blog/data-and-research/glad-deforestation-alerts/)) are incredibly useful at broad spatial scales, but may fail to detect deforestation reliably in areas with high cloud cover, such as western Ecuador, where only a small fraction of original forest cover remains and deforestation continues unchecked in many areas.
+-   [FCAT](https://www.fcat-ecuador.org) is a community-based nonprofit in western Ecuador whose long term goal is to reverse forest loss through capacity building, research, and direct conservation.
 
-***Key takeaways***:
+Here, we:
 
--   Annual deforestation rates in the areas surrounding the FCAT Reserve were ~`r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 4) * 100`% / yr between 2019-2022, approximately `r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts" & Area == "Overall") %>% pull(defor_perc_yr), 1)`x higher than the best available contemporary estimates (2019-2022), and within the range of historic estimates (~10% deforested within MCR 2000-2008, Van der Hoek 2017), 4.2% net deforestation from 2016-2018 (Sierra et al. 2021)
+1.  Generate a high spatial resolution (3m) land cover map of the FCAT reserve and surrounding areas
 
--   As of 2022, forest cover composed approximately `r round(sum(cover_stats_sum_forest %>% filter(year == "2022" & class %in% c("Forest")) %>% pull(area_perc)), 2) * 100`% of the landscape in the areas surrounding the FCAT Reserve
+2.  Develop a machine learning algorithm to identify deforestation hot spots in the areas surrounding the FCAT reserve in near real time (depending on availability of imagery)
 
+::: {.column-body-outset}
+::: {.callout-tip icon="false"}
+## Key takeaways
 
-\newpage
+-   Annual deforestation rates in the areas surrounding the FCAT Reserve were **`r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 3) * 100`% / yr between 2019-2022**
+    -   This is \~`r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts" & Area == "Overall") %>% pull(defor_perc_yr), 1)`x higher than best available contemporary estimates (2019-2022)\
+-   Our approach can detect deforestation in near real-time with the potential to be scaled to larger areas in western Ecuador/line
 
-```{r plot 2019 raster, fig.cap="Satelite imagery from September 2019 from Planet Labs, 3m resolution. Relatively cloud free but still high cloud cover on western side of image."}
+::: {.content-hidden when-format="pdf"}
+![Video showing a deforestation hotspot from 2019-2022. The video begins with an image taken in 2019, and then shows a red overlay shows where deforestation was detected, followed by an image taken in 2022.](.././output/gifs/Hotspot1.gif){fig-align="center"}
+:::
+:::
 
-# Plot 2019 polygons
+::: {.callout-note icon="false"}
+## Caveats
+
+-   We have yet to conduct a systematic ground-truthing effort to compare predicted land cover classifications with the truth on the ground.
+-   Estimating reforestation seems to be more challenging than deforestation (see @sec-reforestation) and as a result estimates of reforestation are not presented here.
+:::
+:::
+
+# Deforestation: 2019-2022
+
+Using two relatively-cloud free images from [PlanetLabs](https://www.planet.com/) of the areas around the FCAT Reserve taken in 2019 and 2022 ([@fig-planet-rasters]), we trained a machine learning algorithm ([jump to detailed methods](#methods)) to classify land use type as either forest or non-forest. Below are the PlanetLab satellite images and resulting land cover maps, with outlines of the FCAT Reserve, the nearby Bilsa Reserve, and the Mache-Chindul Reserve.
+
+:::{.column-page}
+```{r}
+#| label: fig-planet-rasters
+#| fig-cap: "2019 and 2022 images and land cover maps."
+#| fig-subcap: 
+#|   - "Satelite imagery from September 2019 from Planet Labs, 3m resolution. Relatively cloud free but still high cloud cover on western side of image."
+#|   - "Resulting map of land cover classification for 2019."
+#|   - "Satelite imagery from August 2022 from Planet Labs, 3m resolution. High cloud cover on both eastern and western portions of the image, though the central portion is relatively clear."
+#|   - "Resulting map of land cover classification for 2022." 
+#| layout-nrow: 2
+#| layout-ncol: 2
+#| fig-cap-location: top
+#| cap-location: top
+#| layout-align: center
+
+# Plot 2019 Raster
   terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, stretch = "lin",
-                 mar = c(0,0,1,0), zlim = c(0, 2000),
-                 main = "2019 - September")
+                  mar = c(0,0,0,0),
+                 zlim = c(0, 2000),
+                 axes = FALSE,
+                 main = "2019 - PlanetLab image")
   polys(laguna, col = "steelblue2")
   polys(bilsa, border = "purple")
   polys(fcat, border = "orange")
   polys(MCR, border = "#386cb0")
-  legend("bottom", legend = c("FCAT", "Bilsa", "MCR"),
+  legend("topright", legend = c("FCAT", "Bilsa", "MCR"),
          fill = c("orange", "purple", "#386cb0"), cex = 0.75,
          bg = "white")
   sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
-```
 
-```{r plot land cover 2019, echo=FALSE, fig.cap="Resulting map of land cover classification for 2019", fig.height=8, fig.width=8}
-
-  # Set color palette - https://colorbrewer2.org/#type=qualitative&scheme=Accent&n=5
+# Set color palette - https://colorbrewer2.org/#type=qualitative&scheme=Accent&n=5
   class_colors <- c("black", "#7fc97f", "#ffff99", "white", "grey80")
 
   plot(cover2019, col = class_colors,
+       mar = c(0,0,0,0),
        type = "classes",
        levels = c("No data", "Forest", "Non-forest", "Cloud", "Shadow"),
-       main = "2019")
+       # main = "2019 - Land cover",
+       axes = FALSE,
+       plg = list(x = "topright", bty ="o", bg = "white"))
   polys(laguna, col = "steelblue2")
   polys(bilsa, border = "purple")
   polys(fcat, border = "orange")
   polys(MCR, border = "#386cb0")
-  legend("right", legend = c("FCAT", "Bilsa", "MCR"),
-         fill = c("orange", "purple", "#386cb0"), cex = 0.75,
-         bg = "white")
+  # legend("right", legend = c("FCAT", "Bilsa", "MCR"),
+  #        fill = c("orange", "purple", "#386cb0"), cex = 0.75,
+  #        bg = "white")
   sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
+  
 
-```
-
-```{r plot 2022 raster, fig.cap="Satelite imagery from August 2022 from Planet Labs, 3m resolution. High cloud cover on both eastern and western portions of the image, though the central portion is relatively clear."}
-
-# Plot 2022 polygons
+# Plot 2022 raster
   terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, stretch = "lin",
-                 mar = c(1,1,1,1), zlim = c(0, 2000),
-                 main = "2022 - August")
+                 mar = c(0,0,0,0),
+                 zlim = c(0, 2000),
+                 axes = FALSE)
   polys(laguna, col = "steelblue2")
   polys(bilsa, border = "purple")
   polys(fcat, border = "orange")
   polys(MCR, border = "#386cb0")
-  legend("bottom", legend = c("FCAT", "Bilsa", "MCR"),
-       fill = c("orange", "purple", "#386cb0"), cex = 0.75,
-       bg = "white")
-  sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
-
-```
-
-```{r plot land cover 2022,fig.cap="Resulting map of land cover classification for 2022"}
-  plot(cover2022, col = class_colors,
+  # legend("topright", legend = c("FCAT", "Bilsa", "MCR"),
+  #      fill = c("orange", "purple", "#386cb0"), cex = 0.75,
+  #      bg = "white")
+  sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)  
+  
+  
+# Plot 2022 Land cover  
+plot(cover2022, col = class_colors,
+     # mar = c(3.1, 3.1, 2.1, 9.1),
+       mar = c(0,0,0,0),
        type = "classes",
        levels = c("No data", "Forest", "Non-forest", "Cloud", "Shadow"),
-       main = "2022")
-  # polys(laguna, col = "steelblue2")
-  polys(bilsa, border = "purple")
-  polys(fcat, border = "orange")
-  polys(MCR, border = "#386cb0")
-  legend("bottom", legend = c("FCAT", "Bilsa", "MCR"),
-       fill = c("orange", "purple", "#386cb0"), cex = 0.75,
-       bg = "white")
-  sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
-
-```
-
-#### Set focal region of areas surrounding FCAT Reserve
--   For the remaining analyses, we focus in on a 15,000 ha region surrounding the FCAT reserve to try to minimize complications due to cloud cover
-
-
-```{r plot-2019-land-cover-focal-zone, fig.cap="2019 Land cover classification in focal zone surrounding FCAT Reserve"}
-
-plot(cover2019_focal, col = class_colors[-1],
-     type = "classes", 
-     levels = c("Forest", "Non-forest", "Cloud", "Shadow"),
-     main = "2019")
+     #  main = "2022 - Land cover",
+     axes = FALSE)
   polys(laguna, col = "steelblue2")
   polys(bilsa, border = "purple")
   polys(fcat, border = "orange")
   polys(MCR, border = "#386cb0")
-  sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
+  sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
 
-```
-
-\newpage
-
-### Land cover key results
-
-```{r calculate-land-cover-stats}
-
-# Extract values from both rasters
-cover_stats <- tibble(year = 2019,
-                class = c(values(cover2019_focal)))
-
-cover_stats <- bind_rows(cover_stats,
-                          tibble(year = 2022,
-                          class = c(values(cover2022_focal))))
-
-# Overall
-cover_stats_sum <- cover_stats %>%
-  group_by(year, class) %>%
-  tally() %>%
-  mutate(area_ha = (n * 9)/10000) %>% # Cell size is 9m2
-  mutate(area_perc = area_ha / sum(area_ha)) %>%
-  mutate(class = factor(class, labels = c("Forest", "Non-forest", "Cloud", "Shadow")))
-
-# Subset down to just forest and nonforest
-cover_stats_sum_forest <- cover_stats_sum %>%
-                          filter(class %in% c("Forest", "Non-forest")) %>%
-                          group_by(year) %>%
-                          mutate(area_perc = area_ha / sum(area_ha))
-
-# Calculate cover stats in and outside of MCR
-cover_stats_MCR <- tibble(year = 2019,
-                             MCR = "yes",
-                             class = terra::extract(cover2019_focal, MCR_in_focal_zone, ID = FALSE)[, 1])
-
-cover_stats_MCR <- bind_rows(cover_stats_MCR, 
-                          tibble(year = 2019,
-                             MCR = "no",
-                             class = terra::extract(cover2019_focal, MCR_out_focal_zone, ID = FALSE)[, 1]))
-
-cover_stats_MCR <- bind_rows(cover_stats_MCR, 
-                          tibble(year = 2022,
-                             MCR = "yes",
-                             class = terra::extract(cover2022_focal, MCR_in_focal_zone, ID = FALSE)[, 1]))
-
-
-cover_stats_MCR <- bind_rows(cover_stats_MCR, 
-                          tibble(year = 2022,
-                             MCR = "no",
-                             class = terra::extract(cover2022_focal,
-                                                  MCR_out_focal_zone,
-                                                  ID = FALSE)[, 1]))
-
-
-# Overall
-cover_stats_MCR_sum <- cover_stats_MCR %>%
-  group_by(year, class, MCR) %>%
-  tally() %>%
-  mutate(area_ha = (n * 9)/10000) %>% # Cell size is 9m2
-  group_by(year, MCR) %>%
-  mutate(area_perc = area_ha / sum(area_ha)) %>%
-  mutate(class = factor(class, 
-                        labels = c("Forest", "Non-forest", 
-                                   "Cloud", "Shadow"),
-                        exclude=NULL))
-
-cover_stats_MCR_sum_forest <- cover_stats_MCR_sum %>%
-                                  filter(class %in% c("Forest", "Non-forest")) %>%
-                                  group_by(year, MCR) %>%
-                                  mutate(area_perc = area_ha / sum(area_ha))
-
-
-# Calculating cover stats in and outside of FCAT Reserve
-cover_stats_fcat <- tibble(year = 2019,
-                             fcat = "yes",
-                             class = terra::extract(cover2019_focal, fcat_in_focal_zone, ID = FALSE)[, 1])
-
-cover_stats_fcat <- bind_rows(cover_stats_fcat, 
-                          tibble(year = 2019,
-                             fcat = "no",
-                             class = terra::extract(cover2019_focal, fcat_out_focal_zone, ID = FALSE)[, 1]))
-
-cover_stats_fcat <- bind_rows(cover_stats_fcat, 
-                          tibble(year = 2022,
-                             fcat = "yes",
-                             class = terra::extract(cover2022_focal, fcat_in_focal_zone, ID = FALSE)[, 1]))
-
-
-cover_stats_fcat <- bind_rows(cover_stats_fcat, 
-                          tibble(year = 2022,
-                             fcat = "no",
-                             class = terra::extract(cover2022_focal, fcat_out_focal_zone, ID = FALSE)[, 1]))
-
-
-# Overall
-cover_stats_fcat_sum <- cover_stats_fcat %>%
-  group_by(year, class, fcat) %>%
-  tally() %>%
-  mutate(area_ha = (n * 9)/10000) %>% # Cell size is 9m2
-  group_by(year, fcat) %>%
-  mutate(area_perc = area_ha / sum(area_ha))
-
-cover_stats_fcat_sum$class[cover_stats_fcat_sum$class == 1] <- "Forest"
-cover_stats_fcat_sum$class[cover_stats_fcat_sum$class == "2"] <- "Non-forest"
-cover_stats_fcat_sum$class[cover_stats_fcat_sum$class == "3"] <- "Cloud"
-cover_stats_fcat_sum$class[cover_stats_fcat_sum$class == "4"] <- "Shadow"
-
-cover_stats_fcat_sum_forest <- cover_stats_fcat_sum %>%
-                                  filter(class %in% c("Forest", "Non-forest")) %>%
-                                  group_by(year, fcat) %>%
-                                  mutate(area_perc = area_ha / sum(area_ha))
 
 
 ```
+:::
+------------------------------------------------------------------------
 
--   Overall forest cover in the focal zone decreased from `r round(sum(cover_stats_sum_forest %>% filter(year == "2019" & class %in% c("Forest")) %>% pull(area_perc)), 2) * 100`% in 2019 to `r round(sum(cover_stats_sum_forest %>% filter(year == "2022" & class %in% c("Forest")) %>% pull(area_perc)), 2) * 100`% in 2022
--   Overall non-forest cover increased from `r round(sum(cover_stats_sum_forest %>% filter(year == "2019" & class %in% c("Non-forest")) %>% pull(area_perc)), 2) * 100`% in 2019 to `r round(sum(cover_stats_sum_forest %>% filter(year == "2022" & class %in% c("Non-forest")) %>% pull(area_perc)), 2) * 100`% in 2022
+For the remaining analyses, we focus in on a 15,000 ha region surrounding the FCAT reserve shown in red below to minimize complications due to cloud cover ([@fig-focal-zone]).
 
--   Within our focal area, forest cover was higher in MCR (`r round(sum(cover_stats_MCR_sum_forest %>% filter(year == "2019" & class %in% c("Forest") & MCR == "yes") %>% pull(area_perc)), 2) * 100`%) than outside MCR (`r round(sum(cover_stats_MCR_sum_forest %>% filter(year == "2019" & class %in% c("Forest") & MCR == "no") %>% pull(area_perc)), 2) * 100`%) in 2019 and in 2022 (`r round(sum(cover_stats_MCR_sum_forest %>% filter(year == "2022" & class %in% c("Forest") & MCR == "yes") %>% pull(area_perc)), 2) * 100`%) vs. (`r round(sum(cover_stats_MCR_sum_forest %>% filter(year == "2022" & class %in% c("Forest") & MCR == "no") %>% pull(area_perc)), 2) * 100`%)
+```{r plot-land-cover-focal-zone}
+#| label: fig-focal-zone
+#| fig-cap: "2022 PlanetLab image with focal zone shown in red."
 
--  Within the FCAT reserve, forest cover was `r round(sum(cover_stats_fcat_sum_forest %>% filter(year == "2019" & class %in% c("Forest") & fcat == "yes") %>% pull(area_perc)), 2) * 100`% in 2019
-
-```{r plot land cover stats, fig.cap="Land cover classification by year across focal area", fig.height=8, fig.width=8}
-# Overall percentages
-# p = ggplot(cover_stats_sum_forest, aes(x = class, y = area_perc, fill = factor(year))) + 
-#   geom_bar(stat = "identity", position = "dodge", col = "black") + 
-#   ylab("Proportion of focal area") + 
-#   xlab("Land cover type") +
-#   labs(fill = "Year", col = "Year", title = "Land cover classification by year") +
-#   scale_fill_manual(values = c("firebrick", "steelblue2")) + 
-#   theme_bw(12)
-# p
-
-# Overall percentages
-p = ggplot(cover_stats_sum_forest, aes(x = year, y = area_perc, col = factor(class))) + 
-  geom_line(lwd = 2) +
-  geom_point(size = 5) + 
-  ylab("Proportion of focal area") + 
-  xlab("Year") +
-  ylim(0, 1) + 
-  labs( col = "Land cover type", 
-        title = "Overall land cover classification by year") +
-  scale_color_manual(values = class_colors[2:3]) + 
-  theme_bw(12)
-
-
-
-# Overall percentages in and outside of MCR
-p2 = ggplot(cover_stats_MCR_sum_forest, aes(x = year, y = area_perc, 
-                                              col = factor(class))) + 
-  geom_line(lwd = 2) +
-  geom_point(size = 5) + 
-  ylab("Proportion of focal area") + 
-  xlab("Year") +
-  ylim(0, 1) + 
-  labs( col = "Land cover type", 
-        title = "Land cover classification in and outside MCR") +
-  scale_color_manual(values = class_colors[2:3]) + 
-  facet_wrap(~MCR, 
-             labeller = labeller(MCR = c("no" = "Outside MCR", "yes" = "Inside MCR"))) + 
-  theme_bw(12)
-
-p / p2
+# Plot 2022 raster
+  terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, stretch = "lin",
+                 mar = c(1,1,1,1), zlim = c(0, 2000))
+  polys(laguna, col = "steelblue2")
+  polys(bilsa, border = "purple")
+  polys(fcat, border = "orange")
+  polys(MCR, border = "#386cb0")
+  polys(focal_zone, border = "red")
+  legend("topright", legend = c("FCAT", "Bilsa", "MCR"),
+       fill = c("orange", "purple", "#386cb0"), cex = 0.75,
+       bg = "white")
+  sbar(5000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)  
 
 ```
 
-\newpage
+------------------------------------------------------------------------
 
-## Deforestation 2019-2022
+Using the land cover classification images from 2019 and 2022, we conducted a land cover change analysis to quantify deforestation rates and map hot spots of deforestation across our focal zone. Deforestation only includes pixels that were classified as forest in 2019 and classified as non-forest in 2022. We did not count as deforestation if a pixel was forest in 2019 but then classified as cloud or shadow in 2022.
 
-Using the land cover classification images from 2019-2022, we conducted a land cover change analysis to quantify deforestation rates and map hot spots of deforestation across our focal zone. Deforestation only includes pixels that were classified as forest in 2019 and classified as non-forest in 2022. We did not count as deforestation if a pixel was forest in 2019 but then classified as cloud or shadow in 2022.
+::: {.callout-tip icon="false"}
+## Deforestation key results
 
-We then compare our deforestation rates and map of deforestation hotspots with [Global Forest Watch's Integrated deforestation alerts](https://data.globalforestwatch.org/datasets/gfw::integrated-deforestation-alerts/about), which provides deforestation alerts from 2015-present using a combination of GLAD-L, GLAD-S2, and RADD alert systems. [Read more information here](https://www.globalforestwatch.org/blog/data-and-research/integrated-deforestation-alerts/). We consider this the best available contemporary deforestation alert system that covers the 2019-2022 sampling period. We subset the GFW integrated deforestation alerts to our time period of interest 2019-2022 for all comparisons below.
+-   We estimate annual deforestation rates in our focal zone to be `r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 3) * 100`% from 2019-2022.
 
-However, there appears to be a large gap in data from the GFW alert system on the eastern half of our focal area, which simultaneously limits its utility in comparisons and also highlights the need for alternative methods of detecting deforestation in this part of the world.
+-   This is approximately `r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts"  & Area == "Overall") %>% pull(defor_perc_yr), 2)`x higher than the best available estimates from the GFW Integrated alert system, which estimated annual deforestation rates to be `r round(defor_compare %>% filter(model == "GFW Integrated Alerts"  & Area == "Overall") %>% pull(defor_perc_yr), 4) * 100`% from 2019-2022, but appears to be missing data on the eastern third of the focal area.
+:::
 
-```{r plot-deforestation-map, fig.cap="Map of forest change 2019-2022 estimated by FCAT land cover classification algorithm", fig.height=8, fig.width=8}
+Previous estimates of deforestation in areas of western Ecuador at large spatial scales and resolution calculated \~10% deforestation between 2000-2008 within the Mache-Chindul Reserve [@van_der_hoek_potential_2017] and 4.2% net deforestation from 2016-2018 [@sierra_deforestacion_2021].
+
+```{r plot-deforestation-map, fig.cap="", fig.height=8, fig.width=8}
+#| label: fig-deforestation-map
+#| fig-cap: "Map of deforestation 2019-2022 estimated by FCAT land cover classification algorithm."
 
 # Reformat deforestation raster to only show deforestation
 change_focal_defor <- change_focal
@@ -389,19 +277,186 @@ change_focal_defor[change_focal_defor == 0] <- NA
 change_focal_defor[change_focal_defor == 1] <- NA
 
 
-plot(change_focal_defor, 
+plot(change_focal_defor,
+     # mar = c(3.1, 3.1, 2.1, 9.1),
      col = c("grey50", "firebrick", "white"),
      type = "classes", 
      levels = c("Cloud/Shadow", "Deforestation", "No change"),
      main = "FCAT Deforestation map: Forest change 2019-2022",
-     colNA = "white")
+     colNA = "white",
+     plg = list(x = "topright", bty ="o", bg = "white"))
 polys(laguna, col = "steelblue2")
 polys(bilsa, border = "purple")
 polys(fcat, border = "orange")
 polys(MCR, border = "#386cb0")
-sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
+sbar(2000, xy = "bottomleft", divs = 3, ticks = T, scaleby = 1000)
 
 ```
+
+## Deforestation hotspots
+
+A key advantage of this approach gives us is the ability to detect deforestation hotspots across the landscape. Below in @fig-deforestation-hotspots, we highlight a few deforestation hot spots detected by the FCAT deforestation detection system, showing satellite imagery from 2019, the overlay of the FCAT deforestation detection system, and the satellite image from 2022.
+
+```{r deforestation hotspots}
+#| label: fig-deforestation-hotspots
+#| fig-cap: "Example deforestation hotspots"
+#| fig-subcap: 
+#|   - "2019"
+#|   - "2019 with deforestion in red"
+#|   - "2022"
+#| column: page
+#| layout-nrow: 3
+#| layout-ncol: 3
+#| fig-cap-location: top
+
+# Load in shapefile with rectangles of spots to highlight for deforestation
+hotspots <- terra::vect(here("./reports/shapefiles/Deforestation hotspots.shp"))
+
+
+# Start loop
+for(x in c(5,4,3)){
+  
+  # par(mfrow = c(3, 1))
+  
+  # Basic RGB in 2019
+  terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", 
+                 mar = c(0,0,0,0), 
+                 zlim = c(0, 2000),
+                 ext = ext(hotspots[x]))
+
+  
+    terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", 
+                 mar = c(0,0,0,0), 
+                 zlim = c(0, 2000),
+                 ext = ext(hotspots[x]))
+                # main = "2019")
+
+  # RGB in 2019 with deforestation overlay
+  terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", 
+                 mar = c(0,0,0,0), 
+                 zlim = c(0, 2000),
+                 ext = ext(hotspots[x]))
+                 # main = "2019 w/ deforestation overlay")
+  
+  # FCAT Deforestation
+  plot(change_focal_defor, 
+       col = c("grey50", "firebrick"),         
+       ext = ext(hotspots[x]),
+       type = "classes", 
+       levels = c("No deforestation", "Deforestation"),
+       main = "Deforestation", 
+       add = TRUE, alpha = 0.25, axes = FALSE)
+  
+  # GFW integrated alerts
+  # plot(gfw,
+  #      col = "orange",
+  #      ext = ext(hotspots[x]),
+  #      type = "classes", 
+  #      # levels = c("No deforestation", "Deforestation"),
+  #      main = "Deforestation", add = TRUE, alpha = 0.15, axes = FALSE)
+  # 
+  # 2022 raster
+  terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", 
+                 mar = c(0,0,0,0), 
+                 zlim = c(0, 2000),
+                 ext = ext(hotspots[x]))
+                 #main = "2022")
+  # par(mfrow = c(1, 1))
+}
+
+```
+
+```{r make-gifs}
+
+
+# Load in shapefile with rectangles of spots to highlight for deforestation
+hotspots <- terra::vect(here("./reports/shapefiles/Deforestation hotspots.shp"))
+
+
+# Start loop
+for(x in 1:length(hotspots)){
+  
+
+# Basic RGB in 2019
+      png(here(paste0("./output/gifs/Hotspot", x, "-1.png")), width = 480, height = 480)
+      terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                     stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
+                     ext = ext(hotspots[x]),
+                     # main = "2019",
+                     cex.main = 1.5)
+      dev.off()
+  
+  # RGB in 2019 with deforestation overlay
+     png( here(paste0("./output/gifs/Hotspot", x, "-2.png")), width = 480, height = 480)
+     terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                     stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
+                     ext = ext(hotspots[x]),
+                     # main = "2019 + deforestation overlay",
+                     cex.main = 1.5)
+      
+      # FCAT Deforestation
+      plot(change_focal_defor, 
+           col = c("grey50", "firebrick"),         
+           ext = ext(hotspots[x]),
+           type = "classes", 
+           levels = c("No deforestation", "Deforestation"),
+           # main = "Deforestation", 
+           add = TRUE, alpha = 0.50,
+           axes = FALSE)
+      
+
+        # GFW integrated alerts
+        plot(gfw,
+             col = "orange",
+             ext = ext(hotspots[x]),
+             type = "classes", 
+             # levels = c("No deforestation", "Deforestation"),
+             # main = "Deforestation", 
+             add = TRUE, 
+             alpha = 0.15,
+             axes = FALSE)
+        
+      dev.off()
+        
+  # 2022 raster
+  png(here(paste0("./output/gifs/Hotspot", x, "-3.png")), width = 480, height = 480)
+
+  terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
+                 ext = ext(hotspots[x]),
+                 # main = "2022",
+                 cex.main = 1.5)
+  
+      dev.off()
+   
+   
+  # Load in images
+   image1 <- image_read(here(paste0("./output/gifs/Hotspot", x, "-1.png")))
+   image2 <- image_read(here(paste0("./output/gifs/Hotspot", x, "-2.png")))
+   image3 <- image_read(here(paste0("./output/gifs/Hotspot", x, "-3.png")))
+   
+   # Combine images
+   morphed_images <- image_morph(c(image1, image2, image3), frames = 30)
+
+   # Combine them into a GIF
+    animation <- image_animate(morphed_images, optimize = TRUE)
+    
+    # Write the GIF to a file
+    image_write(animation, here(paste0("./output/gifs/Hotspot", x, ".gif")))
+       
+}
+  
+```
+
+------------------------------------------------------------------------
+
+We can compare our deforestation rates and map of deforestation hotspots with [Global Forest Watch's Integrated deforestation alerts](https://data.globalforestwatch.org/datasets/gfw::integrated-deforestation-alerts/about), which provides deforestation alerts from 2015-present using [a combination of GLAD-L, GLAD-S2, and RADD alert systems](https://www.globalforestwatch.org/blog/data-and-research/integrated-deforestation-alerts/). We consider this the best available contemporary deforestation alert system that covers the 2019-2022 sampling period. We subset the GFW integrated deforestation alerts to our time period of interest 2019-2022 for all comparisons below.
+
+However, there appears to be a large gap in data from the GFW alert system on the eastern half of our focal area ([@fig-deforestation-gfw]), which simultaneously limits its utility in comparisons and also highlights the need for alternative methods of detecting deforestation in this part of the world.
 
 ```{r calculate-deforestation-rates, include=FALSE}
 
@@ -488,50 +543,41 @@ defor_compare <- bind_rows(defor_stats_fcat_sum,
 defor_compare
 ```
 
-
-
-```{r plot gfw alert map, fig.cap="Map of forest change 2019-2022 estimated by GFW Integrated deforestation alerts. Note the lack of alerts on the eastern third of the focal area - indicating a potential issue with the data.", fig.height=8, fig.width=8}
+```{r plot gfw alert map, fig.height=8, fig.width=8}
+#| label: fig-deforestation-gfw
+#| fig-cap: "Map of deforestation 2019-2022 estimated by GFW Integrated deforestation alerts. Note the lack of alerts on the eastern third of the focal area - indicating a potential issue with the data."
 
 plot(gfw_focal, 
+     # mar = c(3.1, 3.1, 2.1, 9.1),
      col = c("white","firebrick"),
      type = "classes", 
      levels = c("No change", "Deforestation"),
-     main = "GFW Integrated Deforestation alerts: 2019-2022")
+     main = "GFW Integrated Deforestation alerts: 2019-2022",
+     legend = "topright")
 polys(laguna, col = "steelblue2")
 polys(bilsa, border = "purple")
 polys(fcat, border = "orange")
 polys(MCR, border = "#386cb0")
-sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
+sbar(2000, xy = "bottomleft", divs = 3, ticks = T, scaleby = 1000)
 
 ```
-
-
-### Deforestation key results
-
--   We estimate annual deforestation rates in our focal zone to be `r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 4) * 100`% from 2019-2022.
-
--   This is approximately `r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts"  & Area == "Overall") %>% pull(defor_perc_yr), 2)`x higher than the best available estimates from the GFW Integrated alert system, which estimated annual deforestation rates to be `r round(defor_compare %>% filter(model == "GFW Integrated Alerts"  & Area == "Overall") %>% pull(defor_perc_yr), 4) * 100`% from 2019-2022, but appears to be missing data on the eastern third of the focal area.
-
--   Deforestation outside the FCAT reserve was `r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "FCAT"  & Area == "Inside FCAT") %>% pull(defor_perc_yr), 1)`x higher than inside the FCAT Reserve
-
--   Deforestation rates inside MCR were `r round(defor_compare %>% filter(model == "FCAT" & Area == "Inside MCR") %>% pull(defor_perc_yr), 4) * 100`% compared to `r round(defor_compare %>% filter(model == "FCAT" & Area == "Outside MCR") %>% pull(defor_perc_yr), 4) * 100`% outside MCR, a `r round((defor_compare %>% filter(model == "FCAT" & Area == "Outside MCR") %>% pull(defor_perc_yr) - defor_compare %>% filter(model == "FCAT" & Area == "Inside MCR") %>% pull(defor_perc_yr)) / defor_compare %>% filter(model == "FCAT" & Area == "Outside MCR") %>% pull(defor_perc_yr), 2) * 100`% increase.
 
 ```{r, fig.cap="Annual deforestation rates in focal area estimated from FCAT land classification algorithm and the GFW Integrated alert system calculated across the entire focal area, and also both inside and outside of MCR"}
 
 # Overall percentages
-p = defor_compare %>% 
-  mutate(MCR = factor(Area, levels = c("Overall", "Inside FCAT", "Inside MCR", "Outside MCR"))) %>%
-  ggplot(., aes(x = model, y = defor_perc_yr * 100, fill = MCR)) + 
-  geom_bar(stat = "identity", position = "dodge", col = "black") + 
-  ylab("Annual deforestation rate (% of focal area)") + 
-  xlab("Source") +
-  ylim(0, 5) + 
-  labs( fill = "Area", 
-        title = "Annual deforestation rates in focal area") +
-  scale_fill_manual(values = c("steelblue2", "#7fc97f", "#beaed4", "#fdc086")) +
-  theme_bw(12)
-
-p
+# p = defor_compare %>% 
+#   mutate(MCR = factor(Area, levels = c("Overall", "Inside FCAT", "Inside MCR", "Outside MCR"))) %>%
+#   ggplot(., aes(x = model, y = defor_perc_yr * 100, fill = MCR)) + 
+#   geom_bar(stat = "identity", position = "dodge", col = "black") + 
+#   ylab("Annual deforestation rate (% of focal area)") + 
+#   xlab("Source") +
+#   ylim(0, 5) + 
+#   labs( fill = "Area", 
+#         title = "Annual deforestation rates in focal area") +
+#   scale_fill_manual(values = c("steelblue2", "#7fc97f", "#beaed4", "#fdc086")) +
+#   theme_bw(12)
+# 
+# p
 
 ```
 
@@ -559,15 +605,16 @@ p
 #   geom_hline(yintercept = 0) + 
 #   theme_bw(12)
 # 
-# ## NEED TO INCLUDE REFORESTATION FOR NUMBERS TO MAKE SENSE?
-
 
 ```
 
-Another point of comparison of deforestation rates in the area comes from the [Hansen et al. Global Forest Change 2000-2021 dataset](Hansen et al. Global Forest Change 2000-2021 dataset), which tracks changes from a forest to non-forest state from 2000-2021 at a 30m spatial resolution. The available data does not completely overlap with our analysis (2019-2022), thus not allowing us to make direct comparisons. However, we can estimate deforestation rates over time using this data.
+------------------------------------------------------------------------
 
+Another point of comparison of deforestation rates in the area comes from the [Global Forest Change 2000-2021 dataset](https://glad.earthengine.app/view/global-forest-change#dl=1;old=off;bl=off;lon=20;lat=10;zoom=3;) by Hansen et al., which tracks changes from a forest to non-forest state from 2000-2021 at a 30m spatial resolution. The available data does not completely overlap with our analysis (2019-2022), thus not allowing us to make direct comparisons. However, we can estimate deforestation rates over time using this data ([@fig-deforestation-hansen]).
 
-```{r hansen loss over time, fig.cap="Estimates of deforestation rates from 2001-2021 from Hansen et al. across the focal area, and inside and outside of MCR"}
+```{r hansen loss over time, fig.cap=""}
+#| label: fig-deforestation-hansen
+#| fig-cap: "Estimates of deforestation rates from 2001-2021 from Hansen et al. across the focal area, and inside and outside of MCR."
 
 hansen_loss <- terra::rast(here("../../../Satellite imagery/Hansen_ForestLossByYear/Hansen_GFC-2021-v1.9_lossyear_10N_080W.tif"))
 
@@ -601,97 +648,31 @@ hansen_loss_sum <- defor_stats_hansen %>%
 
 hansen_loss_sum %>%
   mutate(MCR = factor(MCR, levels = c("Overall", "Inside MCR", "Outside MCR"))) %>%
+  filter(MCR == "Overall") %>%
   ggplot(., aes(year, defor_perc * 100, col = MCR)) + 
-  geom_line() + 
-  geom_point() +
+  geom_line(lwd = 1.5) + 
+  geom_point(size = 2) +
   ylab("Annual deforestation rate (% of focal area)") + 
   xlab("Year") +
   ylim(0, 5) +
   labs(color = "Area", 
-       title = "Annual deforestation rates in focal area based on Hansen et al.") +
+       title = "Annual deforestation rates in focal area based on \n Global Forest Change dataset.") +
   scale_color_manual(values = c("#7fc97f", "#beaed4", "#fdc086")) +
-  theme_bw(12)
+  theme_bw(12) +
+  theme(legend.position = "none")
+
 
 ```
 
-- The Hansen et al. dataset estimates average deforestation rates to be `r round(mean(hansen_loss_sum %>% filter(MCR == "Overall") %>% pull(defor_perc)), 4)*100`% across the time period 2001-2021, with peaks as high as 3% annually.
+The Global Forest Change dataset estimates average deforestation rates to be `r round(mean(hansen_loss_sum %>% filter(MCR == "Overall") %>% pull(defor_perc)), 4)*100`% across the time period 2001-2021, with peaks as high as 3% annually.
 
 \newpage
 
-### Deforestation hotspots
-
-Below, we highlight a few deforestation hot spots detected by the FCAT deforestation detection system, showing satellite imagery from 2019, the overlay of the FCAT deforestation detection system, and the satellite image from 2022.
-
-```{r deforestation hotspots, fig.height=3, fig.width=8}
-
-# Load in shapefile with rectangles of spots to highlight for deforestation
-hotspots <- terra::vect(here("./reports/shapefiles/Deforestation hotspots.shp"))
-
-
-# Start loop
-for(x in 1:length(hotspots)){
-  
-  par(mfrow = c(1, 3))
-  
-  # Basic RGB in 2019
-  terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
-                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(hotspots[x]),
-                 main = "2019")
-  
-  dev.copy(png, "t2.png")
-  dev.off()
-  
-  # RGB in 2019 with deforestation overlay
-  terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
-                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(hotspots[x]),
-                 main = "2019 w/ deforestation overlay")
-  
-  # FCAT Deforestation
-  plot(change_focal_defor, 
-       col = c("grey50", "firebrick"),         
-       ext = ext(hotspots[x]),
-       type = "classes", 
-       levels = c("No deforestation", "Deforestation"),
-       main = "Deforestation", add = TRUE, alpha = 0.25)
-  
-  # GFW integrated alerts
-  plot(gfw,
-       col = "orange",
-       ext = ext(hotspots[x]),
-       type = "classes", 
-       # levels = c("No deforestation", "Deforestation"),
-       main = "Deforestation", add = TRUE, alpha = 0.15)
-  
-  # 2022 raster
-  terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, 
-                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(hotspots[x]),
-                 main = "2022")
-  par(mfrow = c(1, 1))
-}
-
-```
-
-
-
-# Improvements
-
-This is meant to be a first step towards a more comprehensive and accurate land use monitoring system. A few next steps that may help improve the analysis would be:
-  
-- Integrate with high resolution drone imagery for ground-truthing
-- Explore whether using 8-band Planet images would improve ability to discriminate between more land use types
-- Propagate uncertainty in land cover classification predictions to produce confidence intervals
-- Apply segmentation and computer vision algorithms for model training and prediction - https://arxiv.org/abs/2304.07213
-
-
 # Issues / Caveats
 
-### Clouds remain a challenge
-- it is difficult to detect land cover change in areas where it was cloudy in 2019 or 2022
--   Another minor issue is that the tin roofs of people's dwelling are commonly classified as clouds because of their strong reflection in the sun. This represents a very small fraction of the project area.
+## Clouds remain a challenge
 
+Clouds that are present in either 2019 or 2022 prevent us from detecting any land cover change in the areas affected by clouds. For this analysis, we are using images with the least amount of cloud cover of our focal area.
 
 ```{r plotting issues, fig.height=3, fig.width=8}
 
@@ -725,12 +706,12 @@ for(x in 1){
          main = "Deforestation", add = TRUE, alpha = 0.35)
     
     # GFW Integrated alerts alerts
-    plot(gfw,
-         col = "orange",
-         ext = ext(issues[x]),
-         type = "classes", 
-         # levels = c("No deforestation", "Deforestation"),
-         main = "Deforestation", add = TRUE, alpha = 0.15)
+    # plot(gfw,
+    #      col = "orange",
+    #      ext = ext(issues[x]),
+    #      type = "classes", 
+    #      # levels = c("No deforestation", "Deforestation"),
+    #      main = "Deforestation", add = TRUE, alpha = 0.15)
     # 
     #  # Hansen Forest Loss
     # plot(hansen_loss,
@@ -749,7 +730,8 @@ for(x in 1){
 
 ```
 
-- Additionally, the leading edge of clouds (especially wispy clouds) are frequently classified as non-forest. You can see this clearly in the example below of a cloud over Bilsa Reserve, which is known to be mostly forest.
+Additionally, the leading edge of clouds (especially wispy clouds) are frequently sometimes classified by the model as non-forest. You can see this in the example below of a cloud over Bilsa Reserve, which is known to be mostly forest.
+
 ```{r plot leading edge of cloud, fig.height=3, fig.width=8}
 
 # Start loop
@@ -760,27 +742,30 @@ for(x in 3){
   # Basic RGB in 2019
   terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
                  stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(issues[x]),
-                 main = "2019")
+                 ext = ext(issues[x]))
   
   # RGB in 2019 with deforestation overlay
   plot(crop(cover2019, issues[x]), 
        col = class_colors[-1],
+       mar = c(0,0,1,0),
+       axes = FALSE,
      type = "classes", 
      ext = ext(issues[x]),
      levels = c("Forest", "Non-forest", "Cloud", "Shadow"),
-     main = "2019")
+     legend = "topright")
 
   
   par(mfrow = c(1, 1))
 }
 ```
 
-### Reforestation
- - Detecting 'reforestation' seems to be more challenging that detecting deforestation, potentially leading to more false positives. This is why this report has primarily focused on deforestation.
- 
+## Reforestation {#sec-reforestation}
 
-```{r plot-reforestation-map, fig.cap="Map of forest change 2019-2022 including reforestation estimated by FCAT land cover classification algorithm", fig.height=8, fig.width=8}
+Detecting 'reforestation' seems to be more challenging that detecting deforestation, potentially leading to more false positives. \[\@fig-forest-change\] shows where areas in green were predicted by the model to be cases of reforestation- transitioned from non-forest in 2019 to forest in 2022.
+
+```{r plot-reforestation-map, fig.cap="", fig.height=8, fig.width=8}
+#| label: fig-forest-change
+#| fig-cap: "Map of forest change 2019-2022 including reforestation estimated by FCAT land cover classification algorithm."
 
 # Reformat deforestation raster to only show deforestation
 change_focal_refor <- change_focal
@@ -788,9 +773,10 @@ change_focal_refor[change_focal_refor == 0] <- NA
 
 plot(change_focal_refor, 
      col = c("grey50", "firebrick", "forestgreen", "white"),
+     mar = c(3.1, 3.1, 2.1, 9.1),
      type = "classes", 
      levels = c("Cloud/Shadow", "Deforestation", "Reforestation", "No change"),
-     main = "FCAT Forest change map: Forest change 2019-2022",
+     main = "Forest change 2019-2022",
      colNA = "white")
 polys(laguna, col = "steelblue2")
 polys(bilsa, border = "purple")
@@ -800,30 +786,40 @@ sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
 
 ```
 
-- In the first two examples below, the model is predicting a large area of reforestation shown in yellow, but it's difficult to tell from the satellite imagery whether this is a cacao plantation growing in size, greening of a pasture, or some other reason.
-- ground truthing will likely help address this issue in future versions of the model
-- The issue with the cloud edges being classified as non-forest above also creates issues with overestimating reforestation, as shown in the third example
+------------------------------------------------------------------------
 
-```{r plotting-reforestation-issues, fig.height=3, fig.width=8}
+In the first two examples below, the model is predicting a large area of reforestation shown in yellow, but it's difficult to tell from the satellite imagery whether this is a cacao plantation growing in size, greening of a pasture, or some other process. Ground truthing will help address this issue in future versions of the model. Cloud edges being classified as non-forest above also creates issues with overestimating reforestation, as shown in the third example.
+
+```{r plotting-reforestation-issues}
+#| label: fig-reforestation-hotspots
+#| fig-cap: "Reforestation hotspots"
+#| fig-subcap: 
+#|   - "2019"
+#|   - "2019 with deforestion in red and reforestation in yellow"
+#|   - "2022"
+#| column: page
+#| layout-nrow: 3
+#| layout-ncol: 3
+#| fig-cap-location: top
 
 # Load in shapefile with rectangles of spots to highlight for issues
 
 # Start loop
 for(x in c(4,5,6)){ # 4th polygon in issues shapefiles highlights the problem
   
-  par(mfrow = c(1, 3))
+  # par(mfrow = c(1, 3))
   
   # Basic RGB in 2019
   terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
                  stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(issues[x]),
-                 main = "2019")
+                 ext = ext(issues[x]))
+              #   main = "2019")
   
   # RGB in 2019 with forest change overlay
   terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
                  stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(issues[x]),
-                 main = "2019 w/ deforestation overlay")
+                 ext = ext(issues[x]))
+            #     main = "2019 w/ deforestation overlay")
   
   # FCAT Deforestation
   plot(change_focal_refor, 
@@ -831,19 +827,19 @@ for(x in c(4,5,6)){ # 4th polygon in issues shapefiles highlights the problem
        ext = ext(issues[x]),
        type = "classes", 
        levels = c("No deforestation", "Deforestation", "Reforestation"),
-       main = "Deforestation", add = TRUE, alpha = 0.35)
+      # main = "Deforestation", 
+       add = TRUE, alpha = 0.35, axes = FALSE)
   
   # 2022 raster
   terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, 
                  stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
-                 ext = ext(issues[x]),
-                 main = "2022")
+                 ext = ext(issues[x]))
+            #     main = "2022")
   
-  par(mfrow = c(1, 1))
+#  par(mfrow = c(1, 1))
 }
 
 ```
-
 
 ```{r}
 ## Calculate concordance between GFW alerts and FCAT
@@ -876,20 +872,32 @@ for(x in c(4,5,6)){ # 4th polygon in issues shapefiles highlights the problem
 
 ```
 
-# Detailed methods - Still need to finish!
+# Methods {#methods}
 
-For our classification model, we used Extreme Gradient Boosting (Chen & Guestrin, 2016) in the ‘xgboost’ R package (Chen et al., 2015). Extreme Gradient Boosting is a powerful and flexible machine learning algorithm commonly used in classification tasks. 
+All analysis code is publicly available [here](https://github.com/lukembrowne/FCAT-Land-cover-from-Planet-imagery).
 
-We began the analysis by selecting a two relatively cloud free images from Planet Labs after viewing their entire available catalogue via [Planet Explorer](https://www.planet.com/explorer/). We downloaded two 4-band, harmonized, surface reflectance image groups captured September 3rd, 2019 and August 15th, 2022. We tried to use images from approximately the same month to minimize seasonal differences. 
+To classify land cover, we used Extreme Gradient Boosting [@chen_xgboost_2016] in the 'xgboost' R package [@chen_xgboost_2015]. Extreme Gradient Boosting is a powerful and flexible machine learning algorithm commonly used in classification tasks.
 
-All analysis code is available here: ########
+We began the analysis by selecting a two relatively cloud free images from Planet Labs after viewing their entire available catalog via [Planet Explorer](https://www.planet.com/explorer/). Satellite images were provided courtesy of Planet Labs PBC through their Education and Research Program.
 
-We then created a set of training polygons separate for each time period (2019 and 2022). Based upon visual inspection of the satellite imagery, we drew polygons to provide training data for our four land cover classes: forest, non-forest, cloud, and shadow. We aimed for at least 30 polygons for each class in each time period, often time achieving more than this. Below is a table showing the area covered and number of distinct polygons for each class in each time period.
+We downloaded two 4-band, harmonized, surface reflectance image groups captured September 3rd, 2019 and August 15th, 2022. We selected images from approximately the same month to minimize seasonal differences. For all steps, we processed each image separately as initial attempts to train a model with images taken from multiple years caused issues due to differences in light angle and sensors, among other factors.
 
-### Number and size of training polygons
+### Training and validation data
+
+We then created a set of training and validation polygons separate for each time period- 2019 and 2022. Based upon visual inspection of the satellite imagery, we manually drew polygons to provide training data for our four land cover classes: forest, non-forest, cloud, and shadow. We aimed for at least 30 polygons for each class in each time period, often time achieving more than this. [@fig-training-polygons] shows the location of training polygons for each class in each time period.
 
 ```{r Number and size of training polygons, echo=FALSE}
+#| label: fig-training-polygons
+#| fig-cap: "2019 and 2022 images with training polygons"
+#| fig-subcap: 
+#|   - "Satelite imagery from September 2019 from Planet Labs, 3m resolution with training polygons."
+#|   - "Satelite imagery from August 2022 from Planet Labs, 3m resolution with training polygons."
+#| column: page
+  #| layout-ncol: 2
 
+#| fig-cap-location: top
+#| cap-location: top
+#| layout-align: center
 
 # Load in class shapefiles
 training_2019 <- terra::vect(here("./class_shapefiles/2019_09 classes.shp"))
@@ -952,24 +960,31 @@ legend("top", legend = c("FCAT", "Bilsa", "MCR"),
 # knitr::kable(training_count %>% filter(class != "built environment"))
 ```
 
+To build the model training and validation data set, we extracted data from each of the 4 bands for all pixels falling within the training polygons.
 
-To build the model training set, we extracted the pixel values from each of the 4 bands from each raster image of the areas covered by each polygon. 
+To build the model validation data set, we split the overall data set into training and validation subset using a 80/20 split across polygons within each class. For example, 80% of polygons denoted as forest were placed in the model training set and 20% were placed in an independent model validation set. The validation set was withheld from model training to calculate model accuracy.
 
-To validate our model, we further split the training data set into training and validation using a 80/20 split across polygons within each class. For example, 80% of polygons denoted as forest were placed in the model training set and 20% were placed in an independent model validation set. 
+### Model fitting
 
-We used a partial grid search to determine optimal parameter values for the hyperparameters in the Extreme Gradient Boosting model. 
+We fit separate Extreme Gradient Boosting models to each time period (2019 and 2022) and used a random, partial grid search to determine optimal parameter values for the hyperparameters in the Extreme Gradient Boosting model.
 
----  Explain more about grid search
+### Model accuracy
 
-We fit separate Extreme Gradient Boosting models to each time period (2019 and 2022).
-
-To calculate classification accuracy on the withheld validation set, we used the fitted model to generate predictions on each pixel in the validation set. This resulted in a matrix containing the probability of each pixel belonging to one of the land cover classes. To make a final determination of the land cover class, we chose the class with the highest predicted probability. 
+To calculate classification accuracy on the withheld validation set, we used the fitted model to generate predictions on each pixel in the validation set. This resulted in a matrix containing the probability of each pixel belonging to one of the land cover classes. To make a final determination of the land cover class, we chose the class with the highest predicted probability.
 
 Overall model accuracy was `r round(confusion_2019$overall[1], 3)*100`% for 2019 and `r round(confusion_2022$overall[1], 3)*100`% in 2022
 
-### Confusion matrices
+### 
 
 ```{r echo=FALSE}
+#| label: tbl-accuracy
+#| tbl-cap: "Model performance metrics"
+#| tbl-subcap: 
+#|    - "2019 model performance metrics on witheld validation set"
+#|    - "2022 model performance metrics on witheld validation set"
+#| tbl-cap-location: top
+#| layout-nrow: 2
+
 
 
 format_stats_by_class <- function(confusion_mat){
@@ -1003,71 +1018,52 @@ knitr::kable(stats_by_class2022)
 
 ```
 
+------------------------------------------------------------------------
 
-Below are plots that show the relative importance of each of the four bands in generating predictions in the fitted model:
-  
+Below are plots that show the relative importance of each of the four bands in generating predictions in the fitted model, separately for each time period:
+
 ```{r echo=FALSE}
-
+#| label: fig-variable-importance
+#| fig-cap: "Variable importance in XGBoost models"
+#| fig-subcap: 
+#|   - "Variable importance for 2019 XGBoost model."
+#|   - "Variable importance for 2022 XGBoost model."
+#| column: page
+#| layout-ncol: 2
+#| fig-cap-location: top
+#| cap-location: top
+#| layout-align: center
 
 # Plots
-par(mfrow = c(1, 2))
 xgb.plot.importance(importance_2019, main = "2019", cex = .75)
 xgb.plot.importance(importance_2022, main = "2022", cex = .75)
 
-par(mfrow = c(1,1))
 
 ```
-
 
 ### Post-processing and change detection
 
-We ran a 'sieve' filter wiuth a value of 100 using the 'terra' package on the resulting land cover classification maps to remove the influence of isolated pixels.
+To reduce the occurence and influence of isolated pixels, we ran a 'sieve' filter with a value of 100 using the ['terra' package in R](https://github.com/rspatial/terra) on the resulting land cover classification maps.
 
-To calculate changes in land cover classification across time, we first converted raster values to :
-  - forest = 1
-- non-forest = 10
-- cloud = 100
-- shadow = 1000
+To calculate changes in land cover classification across time, we first converted raster values to : - forest = 1; non-forest = 10; cloud = 100; shadow = 1000.
 
-We then subtracted the 2019 land cover classification map from the 2022 land cover classification map, which resulted in a map of the following values
+We then subtracted the 2019 land cover classification map from the 2022 land cover classification map, which resulted in a map of the following values representing different land use transitions:
 
-- 0 = unchanged
-- 9 = non-forest to forest
-- -9 = forest to non-forest
-- 99 = cloud to forest
-- -99 = forest to cloud
-- 90 = cloud to non-forest
-- -90 = non-forest to cloud
-- 900 = shadow to cloud
-- -900 = cloud to shadow
-- 990 = shadow to non-forest
-- -990 = nonforest to shadow
-- 999 = shadow to forest
-- -999 = forest to shadow
-
-
-
+-   0 = unchanged
+-   9 = non-forest to forest
+-   -9 = forest to non-forest
+-   99 = cloud to forest
+-   -99 = forest to cloud
+-   90 = cloud to non-forest
+-   -90 = non-forest to cloud
+-   900 = shadow to cloud
+-   -900 = cloud to shadow
+-   990 = shadow to non-forest
+-   -990 = nonforest to shadow
+-   999 = shadow to forest
+-   -999 = forest to shadow
 
 # References
 
-* Chen T, Guestrin C. 2016. XGBoost: A Scalable Tree Boosting System. In: Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining. KDD ’16. New York, NY, USA: Association for Computing Machinery, 785–794.
-
-* Chen T, He T, Benesty M, Khotilovich V, Tang Y. 2015. Xgboost: extreme gradient boosting. R package version 0. 4-2:1–4.
-
-* Satellite images courtesy of Planet Labs PBC through their Education and Research Program
-
-* Van Der Hoek, “The Potential of Protected Areas to Halt Deforestation in Ecuador.” - https://web.archive.org/web/20220519025545id_/https://repositorio.ikiam.edu.ec:8443/jspui/bitstream/RD_IKIAM/233/1/A-IKIAM-000170.pdf
-
-* R. Sierra, O. Calva y A. Guevara. 2021. La Deforestación en el
-Ecuador, 1990-2018. Factores promotores y tendencias recientes. Ministerio de Ambiente y
-Agua del Ecuador, Ministerio de Agricultura del Ecuador, en el marco de la implementación
-del Programa Integral Amazónico de Conservación de Bosques y Producción Sostenible.
-Quito, Ecuador. 216 pp. - https://www.proamazonia.org/wp-content/uploads/2021/06/Deforestacio%CC%81n_Ecuador_com2.pdf
-
-
-# Appendix: All code for this report
-
-```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
-
-```
-
+::: {#refs}
+:::
