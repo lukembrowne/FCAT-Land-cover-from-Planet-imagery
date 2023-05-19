@@ -33,6 +33,7 @@ knitr::opts_chunk$set(
   library(patchwork)
   library(here)
   library(magick)
+  library(caret)
 
 ## Load rasters
   ras2019 <- terra::rast(here("../../../Satellite imagery/Planet imagery/2019_09 - 4 band harmonized/20190903_merged_3B_AnalyticMS_SR_harmonized_clip.tif"))
@@ -92,15 +93,22 @@ MCR_out_focal_zone <- erase(focal_zone, MCR)
 fcat_in_focal_zone <- crop(fcat, focal_zone)
 fcat_out_focal_zone <- erase(focal_zone, fcat)
 
-
 # Load in deforestation raster
 change <- terra::rast(here("./output/change analysis 2023-05-10/forest change sieve 100 2019-2022 - 2023-05-10.tif"))
 change_focal <- crop(change, focal_zone)
+  
+  # Reformat deforestation raster to only show deforestation
+  change_focal_refor <- change_focal
+  change_focal_refor[change_focal_refor == 0] <- NA
+  
+
+# Read in drone validation
+drone_fcat5 <- terra::rast(here("./reports/drone_fcat5_projected_cropped.tif"))
 
 
 ```
 
-```{r pulling-in-vars, include=FALSE, ref.label=c("calculate-deforestation-rates", "calculate-land-cover-stats")}
+```{r pulling-in-vars, include=FALSE, ref.label=c("calculate-deforestation-rates", "calculate-land-cover-stats", "drone-accuracy")}
 
 ```
 
@@ -122,13 +130,15 @@ Here, we:
 
 2.  Develop a machine learning algorithm to identify deforestation hot spots in the areas surrounding the FCAT reserve in near real time (depending on availability of imagery)
 
-::: {.column-body-outset}
+::: column-body-outset
 ::: {.callout-tip icon="false"}
 ## Key takeaways
 
--   Annual deforestation rates in the areas surrounding the FCAT Reserve were **`r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 3) * 100`% / yr between 2019-2022**
-    -   This is \~`r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts" & Area == "Overall") %>% pull(defor_perc_yr), 1)`x higher than best available contemporary estimates (2019-2022)\
--   Our approach can detect deforestation in near real-time with the potential to be scaled to larger areas in western Ecuador/line
+-   Annual deforestation rates in the areas surrounding the FCAT Reserve were **`r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 3) * 100`% / yr between 2019-2022,** approximately **`r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts" & Area == "Overall") %>% pull(defor_perc_yr), 1)`x higher** than best available contemporary estimates for this time period
+
+-   We were able to predict with the presence of forest vs. non-forest with **`r round(drone_confusion_mat$overall[1], 3)*100` accuracy**, tested against high-resolution drone imagery.
+
+-   Our approach can detect deforestation in near real-time with the potential to be scaled to larger areas in western Ecuador
 
 ::: {.content-hidden when-format="pdf"}
 ![Video showing a deforestation hotspot from 2019-2022. The video begins with an image taken in 2019, and then shows a red overlay shows where deforestation was detected, followed by an image taken in 2022.](.././output/gifs/Hotspot1.gif){fig-align="center"}
@@ -138,7 +148,8 @@ Here, we:
 ::: {.callout-note icon="false"}
 ## Caveats
 
--   We have yet to conduct a systematic ground-truthing effort to compare predicted land cover classifications with the truth on the ground.
+-   Tree crops like cacao and banana can wrongly be classified as forest (see @sec-cacao-as-forest), potentially leading to an overestimate of forest cover.
+
 -   Estimating reforestation seems to be more challenging than deforestation (see @sec-reforestation) and as a result estimates of reforestation are not presented here.
 :::
 :::
@@ -147,7 +158,7 @@ Here, we:
 
 Using two relatively-cloud free images from [PlanetLabs](https://www.planet.com/) of the areas around the FCAT Reserve taken in 2019 and 2022 ([@fig-planet-rasters]), we trained a machine learning algorithm ([jump to detailed methods](#methods)) to classify land use type as either forest or non-forest. Below are the PlanetLab satellite images and resulting land cover maps, with outlines of the FCAT Reserve, the nearby Bilsa Reserve, and the Mache-Chindul Reserve.
 
-:::{.column-page}
+::: column-page
 ```{r}
 #| label: fig-planet-rasters
 #| fig-cap: "2019 and 2022 images and land cover maps."
@@ -230,6 +241,7 @@ plot(cover2022, col = class_colors,
 
 ```
 :::
+
 ------------------------------------------------------------------------
 
 For the remaining analyses, we focus in on a 15,000 ha region surrounding the FCAT reserve shown in red below to minimize complications due to cloud cover ([@fig-focal-zone]).
@@ -409,16 +421,16 @@ for(x in 1:length(hotspots)){
            axes = FALSE)
       
 
-        # GFW integrated alerts
-        plot(gfw,
-             col = "orange",
-             ext = ext(hotspots[x]),
-             type = "classes", 
-             # levels = c("No deforestation", "Deforestation"),
-             # main = "Deforestation", 
-             add = TRUE, 
-             alpha = 0.15,
-             axes = FALSE)
+        # # GFW integrated alerts
+        # plot(gfw,
+        #      col = "orange",
+        #      ext = ext(hotspots[x]),
+        #      type = "classes", 
+        #      # levels = c("No deforestation", "Deforestation"),
+        #      # main = "Deforestation", 
+        #      add = TRUE, 
+        #      alpha = 0.15,
+        #      axes = FALSE)
         
       dev.off()
         
@@ -759,17 +771,124 @@ for(x in 3){
 }
 ```
 
+## Cacao classified as forest {#sec-cacao-as-forest}
+
+Tree crops, such as cacao, banana, and oil palm, have the potential to be misclassified as forest because their appearance to satellites in the visible and NIR spectrum is similar to that of a true forest canopy, especially when the crops are planted in high density monoculture. Using very high resolution drone imagery as a ground-truth, we can see an example below of a young cacao plantation being mis-classified as forest in the 2022 land cover predictions.
+
+::: column-page
+```{r plot-drone-validation}
+#| label: fig-drone-validation-image
+#| fig-cap: "Cacao mis-classified as forest"
+#| fig-subcap: 
+#|   - "Drone imagery taken February 2023."
+#|   - "Drone imagery taken February 2023 with overlay 2022 land cover classification."
+#| layout-nrow: 1
+#| layout-ncol: 2
+#| layout-align: center
+
+# Drone image
+  plotRGB(drone_fcat5)
+  sbar(50, xy = "bottomright", below = "meters", divs = 3, ticks = T, scaleby = 1)
+
+# Drone + Overlay of land cover classification
+   plot(cover2022, col = class_colors[-1],
+       ext = ext(issues[7]),
+       mar = c(0,0,0,0),
+       type = "classes",
+       levels = c("Forest", "Non-forest", "Cloud", "Shadow"),
+       axes = FALSE,
+       plg = list(x = "topright", bty ="o", bg = "white"),
+       alpha = 1,
+       add = FALSE)
+  plotRGB(drone_fcat5, alpha = 150, add = TRUE)
+
+```
+:::
+
 ## Reforestation {#sec-reforestation}
 
-Detecting 'reforestation' seems to be more challenging that detecting deforestation, potentially leading to more false positives. \[\@fig-forest-change\] shows where areas in green were predicted by the model to be cases of reforestation- transitioned from non-forest in 2019 to forest in 2022.
+The mis-classification of tree crops as forest can have implications for estimates of reforestation as well as for deforestation. Following the drone example above, we see that in 2019, the cacao plantation highlighted above was in the early stages of being established and correctly classified as non-forest by the land cover model. However, by 2022, the cacao plants had grown enough to be determined to be forest by the model, as as a result, this was mapped as potential reforestation.
+
+::: column-page
+```{r plot-cacao-as-restforestion}
+#| label: fig-cacao-as-reforestation
+#| fig-cap: "Cacao growth classified as reforestation"
+#| fig-subcap: 
+#|   - "2019 PlanetLab Satellite Imagery"
+#|   - "2019 Land cover classification"
+#|   - "2022 PlanetLab Satellite Imagery"
+#|   - "2022 Land cover classification"
+#|   - "2023 Drone imagery"
+#|   - "2023 Drone imagery with reforestation / deforestation overlay"
+#| layout-nrow: 3
+#| layout-ncol: 2
+#| layout-align: center
+
+# Start loop
+for(x in 7){
+  
+  # Basic RGB in 2019
+  terra::plotRGB(ras2019, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
+                 ext = ext(issues[x]))
+  
+  # RGB in 2019 with deforestation overlay
+  plot(crop(cover2019, issues[x]), 
+       col = class_colors[-1],
+       mar = c(0,0,1,0),
+       axes = FALSE,
+     type = "classes", 
+     ext = ext(issues[x]),
+     levels = c("Forest", "Non-forest", "Cloud", "Shadow"),
+     legend = "topright")
+  
+  
+  # Basic RGB in 2022
+  terra::plotRGB(ras2022, r = 3, g = 2 , b  = 1, 
+                 stretch = "lin", mar = c(0,0,1,0), zlim = c(0, 2000),
+                 ext = ext(issues[x]))
+  
+  # RGB in 2022 with deforestation overlay
+  plot(crop(cover2022, issues[x]), 
+       col = class_colors[-1],
+       mar = c(0,0,1,0),
+       axes = FALSE,
+     type = "classes", 
+     ext = ext(issues[x]),
+     levels = c("Forest", "Non-forest", "Cloud", "Shadow"),
+     legend = "topright")
+  
+  
+  # Drone image
+  plot(drone_fcat5, ext = ext(issues[7]))
+  sbar(50, xy = "bottomright", below = "meters", divs = 3, ticks = T, scaleby = 1)
+
+# Drone + Overlay of land cover classification
+  plot(drone_fcat5, ext = ext(issues[7]))
+  plot(change_focal_refor,
+       ext = ext(issues[7]),
+       mar = c(0,0,0,0),
+       type = "classes",
+       levels = c("Deforestation", "Reforestation"),
+       col = c("firebrick", "yellow"),     
+       axes = FALSE,
+       plg = list(x = "topright", bty ="o", bg = "white"),
+       alpha = 0.6,
+       add = TRUE)
+  
+  sbar(50, xy = "bottomright", below = "meters", divs = 3, ticks = T, scaleby = 1)
+  
+
+}
+
+```
+:::
+
+More generally, detecting 'reforestation' seems to be more challenging that detecting deforestation, potentially leading to more false positives. [@fig-forest-change] shows where areas in green were predicted by the model to be cases of reforestation- transitioned from non-forest in 2019 to forest in 2022.
 
 ```{r plot-reforestation-map, fig.cap="", fig.height=8, fig.width=8}
 #| label: fig-forest-change
 #| fig-cap: "Map of forest change 2019-2022 including reforestation estimated by FCAT land cover classification algorithm."
-
-# Reformat deforestation raster to only show deforestation
-change_focal_refor <- change_focal
-change_focal_refor[change_focal_refor == 0] <- NA
 
 plot(change_focal_refor, 
      col = c("grey50", "firebrick", "forestgreen", "white"),
@@ -777,6 +896,7 @@ plot(change_focal_refor,
      type = "classes", 
      levels = c("Cloud/Shadow", "Deforestation", "Reforestation", "No change"),
      main = "Forest change 2019-2022",
+     plg = list(x = "topright", bty ="o", bg = "white"),
      colNA = "white")
 polys(laguna, col = "steelblue2")
 polys(bilsa, border = "purple")
@@ -788,7 +908,7 @@ sbar(2000, xy = "bottomright", divs = 3, ticks = T, scaleby = 1000)
 
 ------------------------------------------------------------------------
 
-In the first two examples below, the model is predicting a large area of reforestation shown in yellow, but it's difficult to tell from the satellite imagery whether this is a cacao plantation growing in size, greening of a pasture, or some other process. Ground truthing will help address this issue in future versions of the model. Cloud edges being classified as non-forest above also creates issues with overestimating reforestation, as shown in the third example.
+We highlight a few more examples of areas where were reforestation was predicted, but likely a false positive. In the first two examples below, the model is predicting a large area of reforestation shown in yellow, but it's difficult to tell from the satellite imagery alone whether this is a cacao plantation growing in size, greening of a pasture, or some other process. Ground truthing in the field can help address this issue in future versions of the model. Cloud edges being classified as non-forest above also creates issues with overestimating reforestation, as shown in the third example.
 
 ```{r plotting-reforestation-issues}
 #| label: fig-reforestation-hotspots
@@ -827,7 +947,7 @@ for(x in c(4,5,6)){ # 4th polygon in issues shapefiles highlights the problem
        ext = ext(issues[x]),
        type = "classes", 
        levels = c("No deforestation", "Deforestation", "Reforestation"),
-      # main = "Deforestation", 
+       plg = list(x = "topright", bty ="o", bg = "white"),
        add = TRUE, alpha = 0.35, axes = FALSE)
   
   # 2022 raster
@@ -881,6 +1001,8 @@ To classify land cover, we used Extreme Gradient Boosting [@chen_xgboost_2016] i
 We began the analysis by selecting a two relatively cloud free images from Planet Labs after viewing their entire available catalog via [Planet Explorer](https://www.planet.com/explorer/). Satellite images were provided courtesy of Planet Labs PBC through their Education and Research Program.
 
 We downloaded two 4-band, harmonized, surface reflectance image groups captured September 3rd, 2019 and August 15th, 2022. We selected images from approximately the same month to minimize seasonal differences. For all steps, we processed each image separately as initial attempts to train a model with images taken from multiple years caused issues due to differences in light angle and sensors, among other factors.
+
+In addition to the four bands (red, green, blue, NIR) made available by PlanetLab, we calculate NDVI (normalized difference vegetation index) and NDWI (normalized difference water index) as additional predictors into the model.
 
 ### Training and validation data
 
@@ -974,8 +1096,6 @@ To calculate classification accuracy on the withheld validation set, we used the
 
 Overall model accuracy was `r round(confusion_2019$overall[1], 3)*100`% for 2019 and `r round(confusion_2022$overall[1], 3)*100`% in 2022
 
-### 
-
 ```{r echo=FALSE}
 #| label: tbl-accuracy
 #| tbl-cap: "Model performance metrics"
@@ -1016,6 +1136,68 @@ knitr::kable(stats_by_class2022)
 # 
 # print(confusion_2022)
 
+```
+
+------------------------------------------------------------------------
+
+```{r drone-accuracy, echo=FALSE}
+
+## Load in drone validation shape files
+  drone_val <- terra::vect(here("./class_shapefiles/2023_02 drone validation classes.shp"))
+
+  # Assign ids
+  drone_val$id <- 1:length(drone_val)
+
+# # Compare areas and counts of each class
+
+  # plot(drone_val, col = drone_val$class)
+
+  # training_count <- tibble(class = drone_val$class,
+  #                                    area_ha = expanse(drone_val)/10000) %>%
+  #                           group_by(class) %>%
+  #                           summarize(area_ha = sum(area_ha),
+  #                                     number_of_polygons = length(class)) %>%
+  #                 mutate(class = factor(class, labels = c("forest", "non-forest")))
+  # 
+  # # Print out table
+  # knitr::kable(training_count %>% filter(class != "built environment"))
+
+# Extract predicted class values
+pred <-  terra::extract(cover2022, drone_val, 
+                        xy = FALSE, exact = FALSE, 
+                        touches = TRUE) 
+
+# summary(pred)
+
+pred <- left_join(pred, values(drone_val), by = c("ID" = "id"))
+pred <- pred %>%
+  rename(pred_class = lyr1, true_class = class)
+
+## Filter out shadows and clouds
+pred <- pred %>%
+  filter(!(pred_class %in% c(3,4)))
+
+
+## Accuracy - take top probability for each pixel
+# sum(pred$pred_class == pred$true_class) / nrow(pred)
+
+# Calculate
+drone_confusion_mat <- caret::confusionMatrix(factor(pred$true_class, 
+                                        levels(factor(pred$pred_class))),
+                                 factor(pred$pred_class, 
+                                        levels(factor(pred$pred_class))),
+                                 mode = "prec_recall")
+```
+
+For the satellite imagery taken in 2022, we are able to ground-truth the predictions of forest/non-forest across a subset of the focal area against high-resolution drone imagery taken in February 2023. We visually categorized areas of the drone imagery as either forest or non-forest and then compared predictions from the 2022 model against this truth.
+
+Overall pixel-level model accuracy against this independent validation set was: `r round(drone_confusion_mat$overall[1], 3)*100`%. More detailed model performance statistics are below:
+
+```{r echo=FALSE}
+
+
+# Print confusion matrix
+print(drone_confusion_mat)
 ```
 
 ------------------------------------------------------------------------
