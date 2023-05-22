@@ -6,7 +6,7 @@ format:
     toc-depth: 2
     toc-location: left
     number-sections: true
-    embed-resources: true
+    embed-resources: false
     code-overflow: wrap
     theme: simplex
     link-external-icon: true
@@ -15,7 +15,7 @@ format:
 css: styles.css
 execute: 
   echo: false
-  cache: true
+  cache: false
 editor: source
 editor_options: 
   chunk_output_type: console
@@ -136,12 +136,12 @@ Here, we:
 
 -   Annual deforestation rates in the areas surrounding the FCAT Reserve were **`r round(defor_compare %>% filter(model == "FCAT" & Area == "Overall") %>% pull(defor_perc_yr), 3) * 100`% / yr between 2019-2022,** approximately **`r round(defor_compare %>% filter(model == "FCAT"  & Area == "Overall") %>% pull(defor_perc_yr) / defor_compare %>% filter(model == "GFW Integrated Alerts" & Area == "Overall") %>% pull(defor_perc_yr), 1)`x higher** than best available contemporary estimates for this time period
 
--   We were able to predict with the presence of forest vs. non-forest with **`r round(drone_confusion_mat$overall[1], 3)*100` accuracy**, tested against high-resolution drone imagery.
+-   We were able to predict with the presence of forest vs. non-forest with **`r round(drone_confusion_mat$overall[1], 3)*100`% accuracy**, tested against high-resolution drone imagery.
 
 -   Our approach can detect deforestation in near real-time with the potential to be scaled to larger areas in western Ecuador
 
 ::: {.content-hidden when-format="pdf"}
-![Video showing a deforestation hotspot from 2019-2022. The video begins with an image taken in 2019, and then shows a red overlay shows where deforestation was detected, followed by an image taken in 2022.](.././output/gifs/Hotspot1.gif){fig-align="center"}
+![Video showing a deforestation hotspot from 2019-2022. The video begins with an image taken in 2019, and then shows a red overlay shows where deforestation was detected, followed by an image taken in 2022.](./output/gifs/Hotspot1.gif){fig-align="center"}
 :::
 :::
 
